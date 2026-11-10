@@ -1,0 +1,105 @@
+{
+  "name": "@xpell/agent",
+  "version": "2.0.7",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Agent runtime infrastructure for Xpell.",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test tests/*.test.mjs",
+    "publish-alpha-next": "pnpm version prerelease --preid=alpha && pnpm publish --tag alpha"
+  },
+  "xpell": {
+    "_tests": [
+      {
+        "_id": "xpell-agent.script.test",
+        "_title": "@xpell/agent package smoke test",
+        "_owner": "@xpell/agent",
+        "_suite": "xpell-agent.package",
+        "_scope": "package",
+        "_runtime": "node",
+        "_description": "Builds the package and verifies XAgent identity, lifecycle, Channel ownership and routing, status execution, and XNode registration.",
+        "_profiles": [
+          "xpell-agent.package"
+        ],
+        "_tags": [
+          "package",
+          "script",
+          "smoke"
+        ],
+        "_entry": {
+          "_type": "script",
+          "_script": "test"
+        }
+      },
+      {
+        "_id": "xpell-agent.package.check",
+        "_title": "@xpell/agent package metadata check",
+        "_owner": "@xpell/agent",
+        "_suite": "xpell-agent.package",
+        "_scope": "package",
+        "_runtime": "node",
+        "_description": "Verifies package metadata and declared local entries without publishing or network checks.",
+        "_profiles": [
+          "xpell-agent.package"
+        ],
+        "_tags": [
+          "package-check"
+        ],
+        "_entry": {
+          "_type": "package-check",
+          "_check": "package"
+        }
+      }
+    ],
+    "_test_profiles": [
+      {
+        "_id": "xpell-agent.package",
+        "_title": "@xpell/agent package verification",
+        "_includes": [
+          "xpell-agent.*"
+        ],
+        "_tags": [
+          "package",
+          "foundation"
+        ]
+      }
+    ]
+  },
+  "keywords": [
+    "xpell",
+    "agent",
+    "xnode"
+  ],
+  "author": "Tamir Fridman <fridman.tamir@gmail.com> (https://github.com/fridman-tamir)",
+  "license": "MIT",
+  "peerDependencies": {
+    "@xpell/node": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@xpell/node": "workspace:*",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
