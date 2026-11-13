@@ -254,7 +254,7 @@ export const XAGENT_SKILL: XAgentSkillMetadata = {
   _id: "xagent",
   _name: "agent",
   _title: "XAgent Runtime Primitive",
-  _version: "2.0.7",
+  _version: "2.0.8",
   _active: true,
   _type: "server-module-api",
   _scope: "server",
