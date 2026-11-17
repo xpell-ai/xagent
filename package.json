@@ -7,10 +7,13 @@
   "description": "Agent runtime infrastructure for Xpell.",
   "files": [
     "dist",
+    "adk-system-xapps",
     "README.md",
     "examples/hello-agent.mjs",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "examples/durable-agent.mjs",
+    "docs/durable-conversations-extraction.md"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",

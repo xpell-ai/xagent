@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — ADK durable conversations Phase 2A
+
+- Add opt-in `createDurableAgent`, bounded history/context and a retained-store example.
+- Reuse generic Starter persistence, lifecycle, deterministic keys, recovery and four unchanged protected schemas through EntityManager SQLite.
+- Require explicit instance/application scope and a matching profile marker for restart; dispose owned providers without deleting data.
+- Preserve Phase 1/root APIs, legacy Starter and existing stores. No schema migration, Actions/Tools, IAM, version bump, publication or host-global changes.
+
 ## Unreleased — ADK Foundation Phase 1
 
 - Add the opt-in `@xpell/agent/adk` composition facade and a packaged mock Hello Agent example.

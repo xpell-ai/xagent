@@ -1,0 +1,140 @@
+{
+  "_id": "message",
+  "_title": "Message",
+  "_description": "Durable normalized conversational history and processing/provider-acceptance state.",
+  "_meta": {
+    "_version": 4
+  },
+  "_storage": {
+    "_provider": "sqlite",
+    "_scope": "app"
+  },
+  "_schema": {
+    "_application_scope_key": {
+      "_type": "String",
+      "_index": true,
+      "_immutable": true
+    },
+    "_conversation_id": {
+      "_type": "ObjectId",
+      "_required": true,
+      "_index": true
+    },
+    "_sender_participant_id": {
+      "_type": "ObjectId",
+      "_index": true
+    },
+    "_direction": {
+      "_type": "String",
+      "_required": true,
+      "_enum": ["inbound", "outbound"],
+      "_index": true
+    },
+    "_text": {
+      "_type": "String",
+      "_required": true
+    },
+    "_occurred_at": {
+      "_type": "Date",
+      "_required": true,
+      "_index": true
+    },
+    "_history_key": {
+      "_type": "String",
+      "_required": true,
+      "_index": {
+        "_unique": true
+      }
+    },
+    "_dedupe_key": {
+      "_type": "String",
+      "_required": true,
+      "_index": {
+        "_unique": true
+      }
+    },
+    "_delivery_state": {
+      "_type": "String",
+      "_required": true,
+      "_enum": [
+        "received",
+        "processed",
+        "processing_failed",
+        "pending",
+        "sending",
+        "accepted",
+        "failed",
+        "uncertain",
+        "send_failed"
+      ],
+      "_index": true
+    },
+    "_external_message_id": {
+      "_type": "String",
+      "_index": true
+    },
+    "_origin_inbound_message_id": {
+      "_type": "ObjectId",
+      "_immutable": true
+    },
+    "_channel_id": {
+      "_type": "String",
+      "_immutable": true
+    },
+    "_recipient_external_conversation_id": {
+      "_type": "String",
+      "_immutable": true
+    },
+    "_recipient_channel_identity_id": {
+      "_type": "ObjectId",
+      "_immutable": true
+    },
+    "_attempt_count": {
+      "_type": "Number"
+    },
+    "_last_attempt_at": {
+      "_type": "Date"
+    },
+    "_last_error_at": {
+      "_type": "Date"
+    },
+    "_last_error_category": {
+      "_type": "String",
+      "_enum": ["rejected", "rate_limited", "unknown", "interrupted"]
+    },
+    "_reply_to_message_id": {
+      "_type": "ObjectId",
+      "_index": true
+    },
+    "_reply_to_external_message_id": {
+      "_type": "String",
+      "_index": true
+    },
+    "_accepted_at": {
+      "_type": "Date",
+      "_index": true
+    },
+    "_failure_code": {
+      "_type": "String",
+      "_index": true
+    },
+    "_id": {
+      "_type": "ObjectId",
+      "_required": false,
+      "_index": {
+        "_unique": true,
+        "_primary": true
+      },
+      "_immutable": true
+    },
+    "_created_at": {
+      "_type": "Date",
+      "_required": false,
+      "_immutable": true
+    },
+    "_updated_at": {
+      "_type": "Date",
+      "_required": false
+    }
+  }
+}
