@@ -38,7 +38,8 @@ After building the checked-out package with `pnpm run build`, run
 tarball can be exercised in a separate empty directory:
 
 ```sh
-npm install /absolute/path/to/reviewed-xpell-agent.tgz @xpell/node@2.0.8
+npm install /absolute/path/to/reviewed-xpell-agent.tgz
+npm ls @xpell/agent @xpell/node @xpell/core --all
 node node_modules/@xpell/agent/examples/hello-agent.mjs
 ```
 
@@ -48,6 +49,19 @@ to the coordinated runtime version, as existing release tooling does.
 `@xpell/node` remains the required peer (2.0.8 in this qualification); modern
 npm normally installs peers, while other package managers/settings may require
 an explicit peer install. No dependency or peer range is changed by Phase 1.
+The published baseline can be checked separately with a clean
+`npm install @xpell/agent`: 2.0.8 resolves the required XNode 2.0.8 peer, but
+does not contain this unpublished ADK subpath. Clean candidate-tarball and
+registry-baseline installs are separate qualification cases.
+
+Use one compatible ESM XNode/Core dependency graph. `--force`,
+`--legacy-peer-deps`, mismatched peers, duplicate runtime copies and mixing
+Core's CommonJS and ESM entry points are outside this profile. Core's current
+import/require entries can create separate engine objects even at the same
+version. A successful install alone does not verify runtime identity:
+`tests/peer.test.mjs` checks the required peer, Agent/consumer XNode identity,
+the peer's ESM Core identity and the Agent's ESM-only entry boundary. No
+process-global duplicate-runtime guard or CommonJS bridge is introduced.
 XNode still brings its existing core, node-core, Vibe, MCP, file-service,
 Express, WebSocket, Mongo and native `better-sqlite3` dependencies. Optional
 plugin usage does not remove these current host dependencies.
@@ -96,9 +110,9 @@ terminal XNode graph in its own process. Platform/native-build support and
 any clean-install results must be reported for the actual tested environment;
 this documentation does not imply every OS/architecture was qualified.
 
-## 2.0.8 release candidate
+## 2.0.8 baseline
 
-Target publication date: **13 November 2026**; this candidate has not been published.
+The registry baseline is 2.0.8. The ADK Foundation changes above remain unpublished.
 Use the coordinated 2.0.8 runtime dependencies. See [CHANGELOG](./CHANGELOG.md)
 for package changes and qualification limits; [LICENSE](./LICENSE) contains the MIT terms.
 
