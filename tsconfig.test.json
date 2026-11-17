@@ -9,5 +9,5 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["tests/consumer.ts"]
+  "include": ["tests/consumer.ts", "tests/adk-consumer.ts"]
 }

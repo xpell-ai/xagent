@@ -1,5 +1,101 @@
 # @xpell/agent
 
+## Opt-in ADK Foundation Phase 1 (unpublished local candidate)
+
+`@xpell/agent/adk` adds a headless, zero-plugin composition facade. The root
+exports and `new XAgent(data)` remain unchanged. This subpath is new local
+work and is **not available from the already published 2.0.8 package**.
+
+```js
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createAgent, mockChannel, mockTextModel } from "@xpell/agent/adk";
+
+const parent = await mkdtemp(join(tmpdir(), "xagent-hello-"));
+const app = createAgent({
+  _name: "hello-agent",
+  _model: mockTextModel({ _text: "Hello from the mock" }),
+  _channel: mockChannel({ _id: "local" }),
+  _host: {
+    _work_folder: join(parent, "runtime"),
+    _listen: { _host: "127.0.0.1", _port: 0 },
+  },
+  _plugins: [],
+});
+try {
+  await app.start();
+  console.log(await app.testTurn({ _text: "hello" }));
+} finally {
+  try { await app.close(); }
+  finally { await rm(parent, { recursive: true, force: true }); }
+}
+```
+
+After building the checked-out package with `pnpm run build`, run
+`node examples/hello-agent.mjs`. Expected output includes
+`Hello from the mock` alongside XNode startup messages. A reviewed local
+tarball can be exercised in a separate empty directory:
+
+```sh
+npm install /absolute/path/to/reviewed-xpell-agent.tgz @xpell/node@2.0.8
+node node_modules/@xpell/agent/examples/hello-agent.mjs
+```
+
+That is candidate-tarball qualification, not a published ADK installation.
+Development manifests use workspace peers; packaging must resolve that peer
+to the coordinated runtime version, as existing release tooling does.
+`@xpell/node` remains the required peer (2.0.8 in this qualification); modern
+npm normally installs peers, while other package managers/settings may require
+an explicit peer install. No dependency or peer range is changed by Phase 1.
+XNode still brings its existing core, node-core, Vibe, MCP, file-service,
+Express, WebSocket, Mongo and native `better-sqlite3` dependencies. Optional
+plugin usage does not remove these current host dependencies.
+
+### Foundation ownership and limits
+
+- Construction validates and snapshots configuration without starting Core,
+  creating files, registering providers or opening listeners.
+- `start()` creates the supplied absolute work folder exclusively; its parent
+  must already exist. Existing folders, files and symlinks are refused. XNode
+  writes its normal host setup files only inside that fresh folder. No Agent
+  conversation store, schema migration, memory-backend promise or old store
+  adoption is introduced.
+- XNode currently opens HTTP even for a headless application. `_listen` is
+  therefore required, with an explicit `127.0.0.1` or `::1` address and port
+  (`0` requests an ephemeral port). Wormholes and TLS are disabled for this
+  fixture profile. Headless means no Console/UI; it does not mean listener-free.
+  A listener-free host requires a separately approved XNode change.
+- Exactly one XAgent owns the configured mock Channel. `testTurn` generates
+  synthetic fixture identities, calls its bound Channel runtime and enters
+  `_x.execute(receive-message)`. The Agent generates the configured fixed mock
+  text; outbound delivery calls the owned Channel directly. This is a local
+  fixture, not an XAI provider or a production model abstraction. No external
+  provider imports, provider registration or paid calls occur.
+- Start is idempotent while live. Close immediately fences new turns, drains
+  already accepted mock turns, stops Channels and closes XNode. Repeated close
+  is idempotent; partial startup is cleaned up. Closing during startup also
+  fences XNode. Arbitrary third-party hooks are not supported.
+- A rejected competing facade does not close another host. XNode retains its
+  existing global Core ownership and terminal-shutdown rules: one host per
+  fresh process, including when creating another facade after close. A failed
+  start is terminal for that facade. Work files are retained after close;
+  only the example explicitly removes its own temporary parent.
+- `_plugins` may be omitted or `[]`; nonempty plugins and unknown configuration
+  fields are rejected. There is no new IAM, Principal/Group/Admin service,
+  authentication, tools/Actions host, secret vault, plugin installer/grants,
+  Router setup, external Channel, XNet integration or durable Agent history.
+  Existing Starter/product orchestration remains application-owned.
+
+Node 22+ is required by the existing package. Node 22 and 24 qualification
+must use separate fresh dependency trees and native binaries for each ABI;
+never rebuild a running application's native addon. Local lifecycle tests
+are `node --test tests/adk.test.mjs` after build; public type checks include
+`tests/adk-consumer.ts`. Test workers block outbound network and isolate each
+terminal XNode graph in its own process. Platform/native-build support and
+any clean-install results must be reported for the actual tested environment;
+this documentation does not imply every OS/architecture was qualified.
+
 ## 2.0.8 release candidate
 
 Target publication date: **13 November 2026**; this candidate has not been published.
