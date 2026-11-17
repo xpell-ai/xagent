@@ -1,0 +1,12 @@
+{
+  "_app_id": "xpell-agent-starter",
+  "_env": "default",
+  "_title": "Xpell Agent Starter",
+  "_version": 3,
+  "_meta": {
+    "_version": 3,
+    "_entry_view_id": "view-main",
+    "_updated_at": "2026-10-01T00:00:00.000Z"
+  },
+  "_config": {}
+}

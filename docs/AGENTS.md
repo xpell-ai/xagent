@@ -61,7 +61,7 @@ This package owns:
 - the deterministic message lifecycle boundary;
 - safe Agent/Channel error normalization.
 
-This package does not own:
+The root Agent runtime does not own:
 
 - Telegram, WhatsApp, Messenger, Instagram, or other providers;
 - HTTP/webhook route registration;
@@ -70,6 +70,17 @@ This package does not own:
 - conversations, persistent messages, history, or memory;
 - XAI behavior, tools, actions, jobs, campaigns, queues, or schedulers;
 - capability installation or application artifact packs.
+
+## Opt-in ADK composition
+
+The separately approved Phase 2A `@xpell/agent/adk` profile may reuse reviewed
+generic Starter conversation/persistence/context code and unchanged protected
+schemas through XNode EntityManager. Activation requires explicit durable-profile
+configuration and a fresh or matching synthetic instance folder. This does not
+change root XAgent/Channel DTOs, existing Starter ownership or store formats.
+No product bindings, IAM service, Actions/Tools, schema migration, automatic
+resend or host-global behavior belongs in this bounded profile. Keep copied
+source provenance and isolated restart/teardown tests with the implementation.
 
 ## XAgent Contract
 
@@ -338,8 +349,8 @@ to know about XAgent.
 
 ## Persistence, Auth, and Memory Boundaries
 
-Persistent conversational artifacts belong to the application Starter, not
-this package. The current Starter owns `conversation_participant`,
+The root Agent runtime leaves persistent conversational artifacts to application
+composition. The legacy Starter remains authoritative for its existing stores. The current Starter owns `conversation_participant`,
 `channel_identity`, `conversation`, `message`, and protected `agent_action` audit
 records; product entities such as `customer` belong to application plugins.
 These are not `@xpell/agent` APIs.

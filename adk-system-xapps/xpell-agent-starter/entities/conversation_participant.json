@@ -1,0 +1,51 @@
+{
+  "_id": "conversation_participant",
+  "_title": "Conversation Participant",
+  "_description": "Application-local conversational actor; external participants have no auth binding.",
+  "_meta": {
+    "_version": 3
+  },
+  "_storage": {
+    "_provider": "sqlite",
+    "_scope": "app"
+  },
+  "_schema": {
+    "_application_scope_key": {
+      "_type": "String",
+      "_index": true,
+      "_immutable": true
+    },
+    "_auth_principal_key": {
+      "_type": "String",
+      "_index": {
+        "_unique": true
+      }
+    },
+    "_auth_user_id": {
+      "_type": "String",
+      "_index": true
+    },
+    "_auth_account_id": {
+      "_type": "String",
+      "_index": true
+    },
+    "_id": {
+      "_type": "ObjectId",
+      "_required": false,
+      "_index": {
+        "_unique": true,
+        "_primary": true
+      },
+      "_immutable": true
+    },
+    "_created_at": {
+      "_type": "Date",
+      "_required": false,
+      "_immutable": true
+    },
+    "_updated_at": {
+      "_type": "Date",
+      "_required": false
+    }
+  }
+}

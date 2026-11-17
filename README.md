@@ -110,6 +110,110 @@ terminal XNode graph in its own process. Platform/native-build support and
 any clean-install results must be reported for the actual tested environment;
 this documentation does not imply every OS/architecture was qualified.
 
+## Opt-in durable conversations (Phase 2A review candidate)
+
+`createDurableAgent` adds SQLite persistence to the local mock profile. Existing
+`createAgent` stays mock-only and refuses existing work folders. Root XAgent and
+Channel APIs are unchanged. No published npm version includes this candidate.
+
+```js
+import { createDurableAgent, mockChannel, mockTextModel } from "@xpell/agent/adk";
+const app = createDurableAgent({
+  _name: "durable-agent",
+  _model: mockTextModel({ _text: "Saved local reply" }),
+  _channel: mockChannel({ _id: "local" }),
+  _host: {
+    _work_folder: "/absolute/operator-owned-parent/new-instance",
+    _listen: { _host: "127.0.0.1", _port: 0 },
+  },
+  _conversations: {
+    _provider: "sqlite",
+    _instance_id: "local-instance",
+    _application_scope: { _env: "development", _app_id: "example" },
+    _history_limit: 100,
+    _context: {
+      _max_context_tokens: 2048,
+      _reserved_output_tokens: 256,
+      _safety_margin_tokens: 128,
+      _system_instructions: "Respond to local synthetic fixtures.",
+    },
+  },
+});
+try {
+  await app.start();
+  console.log(await app.testTurn({
+    _text: "Remember this synthetic message",
+    _external_conversation_id: "conversation-1",
+    _external_user_id: "participant-1",
+    _external_message_id: "delivery-1",
+  }));
+  console.log(await app.getHistory({ _external_conversation_id: "conversation-1",
+    _external_user_id: "participant-1" }));
+  console.log(await app.getContext({ _external_conversation_id: "conversation-1",
+    _external_user_id: "participant-1", _current_text: "Read-only context preview" }));
+} finally { await app.close(); }
+```
+
+Restart in a **fresh process** with the same configuration and work folder.
+`node examples/durable-agent.mjs /absolute/operator-owned-parent/new-instance`
+provides a runnable local example; run it twice to recover history. It retains
+its synthetic store. The parent directory must already exist and be private to
+the operator. Do not point this profile at a Starter, product or existing store.
+
+The first start exclusively creates the directory and a profile marker binding
+the instance, logical application scope, Agent, Channel and exact packaged
+schema hash. Reopening requires that marker to match; unknown directories,
+symlinks and different profiles are rejected before XNode starts. The marker is
+an accidental-adoption guard, not an authentication or tamper-proof mechanism.
+One process/writer per work folder is required; no cross-process lease is added.
+The instance is isolated by its folder; the explicit logical application pair
+also scopes deterministic record keys/queries. Changing either is a new profile,
+not a migration. There is no implicit adoption, data move or schema upgrade.
+
+The private adapter reuses Starter ConversationRepository, ConversationService,
+AgentPersistenceLifecycle and ConversationContextManager with four unchanged
+protected entity artifacts under `xpell-agent-starter/default`. The logical
+application scope does not rename that storage namespace. Persistence state
+remains private to the lifecycle WeakMap. All normal I/O goes through the existing
+app-scoped EntityManager command surface; no second persistence engine or direct
+SQLite API is introduced. Close unregisters the four application entity runtimes
+to dispose their SQLite handles, then stops XNode, preserving tables and files.
+On partial startup after Core fencing, only the same owned EntityManager's
+command dispatcher is used for disposal. No global host behavior changes.
+
+`testTurn` accepts only text and optional external conversation/user/message IDs.
+The defaults are `mock-conversation` and `mock-participant`; omitted message IDs
+use UUIDs. Turns within a conversation are serialized. A redelivery with the
+same immutable payload and explicit message ID returns its persisted accepted
+reply without generating or sending again. Conflicting payload/sender bindings
+fail. Received, failed or uncertain work is not automatically repeated. Startup
+only changes interrupted `sending` records to `uncertain` using the existing
+conservative recovery rule. Provider acceptance is not delivery confirmation.
+
+`getHistory` returns at most the configured newest 1–200 records projected as
+processed user messages and accepted assistant messages, in the existing
+canonical `(occurred_at, message ID)` order. Filtering can return fewer records;
+equal timestamps use ID order, not insertion order. Planning-enveloped replies
+are withheld in history and excluded from model context. `getContext` does not
+persist its preview text. Both reads require a linked scoped mock identity;
+this is synthetic routing, not authentication, authorization or IAM.
+
+Context is built before each mock response and available as a read-only preview.
+The fixed mock deliberately does not interpret it. Existing context selection
+keeps the newest eligible history suffix within the input budget after system,
+safe actor projection, current text, output reserve and safety margin. The
+fallback estimate is UTF-8 bytes/3 rounded up plus framing overhead, not a
+provider tokenizer guarantee. Oversized fixed input fails before generation;
+its inbound audit remains failed. History is paged in 64-record chunks; no
+retention/deletion or total database-size bound is promised.
+
+The same required XNode 2.0.8 peer, single ESM Core graph, Node >=22, explicit
+loopback listener and native `better-sqlite3` setup apply. Qualification covers
+macOS arm64 Node 22/24, separate native ABIs; other platforms need validation.
+No real providers, Actions/Tools, IAM service, grants, background retries or
+Phase 2B are included. See [extraction provenance](docs/durable-conversations-extraction.md)
+for the reviewed generic source and schema hashes.
+
 ## 2.0.8 baseline
 
 The registry baseline is 2.0.8. The ADK Foundation changes above remain unpublished.
@@ -313,7 +417,7 @@ tokens, provider payloads, or raw provider errors.
 
 ## Current scope
 
-The Agent runtime does not provide:
+The root Agent runtime does not provide:
 
 - Telegram, WhatsApp, or other production provider adapters;
 - persistent conversations or messages;
@@ -336,8 +440,9 @@ pnpm build
 pnpm test
 ```
 
-The acceptance suite uses a test-only `FakeChannel`. It performs no network,
-persistence, XDB, XAI, timer, or background work.
+Root runtime tests use a test-only `FakeChannel`. ADK tests additionally start
+real loopback XNode hosts and synthetic temporary SQLite stores in isolated
+processes. Outbound network/provider calls are blocked. No real data is used.
 
 ## License
 
