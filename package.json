@@ -8,6 +8,7 @@
   "files": [
     "dist",
     "README.md",
+    "examples/hello-agent.mjs",
     "LICENSE",
     "CHANGELOG.md"
   ],
@@ -19,6 +20,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./adk": {
+      "types": "./dist/adk.d.ts",
+      "import": "./dist/adk.js"
     },
     "./package.json": "./package.json"
   },

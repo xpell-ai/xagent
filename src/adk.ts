@@ -1,0 +1,251 @@
+import { mkdir } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+import { _x, XNode, type XResponseData } from "@xpell/node";
+
+import { XAgent, type XAgentStatusData } from "./XAgent.js";
+import type {
+  XAgentInboundMessage, XChannel, XChannelOutboundMessage,
+  XChannelRuntime, XChannelSendResult, XChannelStatusData,
+} from "./XChannel.js";
+
+export type MockTextModel = Readonly<{ _type: "mock-text"; _text: string }>;
+export type MockChannel = Readonly<{ _type: "mock"; _id: string }>;
+export type AgentFoundationOptions = {
+  _name: string;
+  _model: MockTextModel;
+  _channel: MockChannel;
+  _host: {
+    /** Absolute, not-yet-existing directory in an operator-owned parent. */
+    _work_folder: string;
+    /** XNode opens HTTP; Phase 1 requires explicit loopback consent. */
+    _listen: { _host: "127.0.0.1" | "::1"; _port: number };
+  };
+  /** Only zero plugins are supported in Foundation Phase 1. */
+  _plugins?: readonly never[];
+};
+export type AgentFoundationStatus = Readonly<{
+  _state: "created" | "starting" | "ready" | "closing" | "closed";
+  _agent: XAgentStatusData;
+  _channels: readonly XChannelStatusData[];
+}>;
+export type AgentFoundation = Readonly<{
+  start(): Promise<void>;
+  close(): Promise<void>;
+  /** Synthetic local ingress, never an authenticated Principal. */
+  testTurn(input: { _text: string }): Promise<string>;
+  getStatus(): AgentFoundationStatus;
+}>;
+
+export class AgentAdkError extends Error {
+  constructor(readonly _code: string, message: string) {
+    super(message);
+    this.name = "AgentAdkError";
+  }
+}
+
+function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((key) => !keys.includes(key))) {
+    throw new AgentAdkError("E_ADK_CONFIG", "Unsupported Foundation configuration");
+  }
+  return value as Record<string, unknown>;
+}
+
+function text(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new AgentAdkError("E_ADK_CONFIG", "Expected nonempty Foundation text");
+  }
+  return value;
+}
+
+/** A deterministic local fixture, not an external XAI provider. */
+export function mockTextModel(input: { _text: string }): MockTextModel {
+  const value = record(input, ["_text"]);
+  return Object.freeze({ _type: "mock-text", _text: text(value._text) });
+}
+
+/** Configure one Agent-owned in-memory fixture Channel. */
+export function mockChannel(input: { _id: string }): MockChannel {
+  const value = record(input, ["_id"]);
+  return Object.freeze({ _type: "mock", _id: text(value._id) });
+}
+
+class FoundationChannel implements XChannel {
+  readonly _provider = "mock";
+  #runtime?: XChannelRuntime;
+  #ready = false;
+  #sequence = 0;
+  #replies = new Map<string, string | undefined>();
+
+  constructor(readonly _id: string) {}
+
+  start(runtime: XChannelRuntime): void {
+    this.#runtime = runtime;
+    this.#ready = true;
+  }
+
+  stop(): void {
+    this.#ready = false;
+    this.#runtime = undefined;
+  }
+
+  getStatus(): XChannelStatusData {
+    return { _id: this._id, _provider: this._provider,
+      _status: this.#ready ? "ready" : "stopped", _ready: this.#ready };
+  }
+
+  async send(message: XChannelOutboundMessage): Promise<XChannelSendResult> {
+    const id = message._reply_to_external_message_id;
+    if (!this.#ready || !id || !this.#replies.has(id)) {
+      throw new AgentAdkError("E_ADK_MOCK_REPLY", "No active mock turn for reply");
+    }
+    this.#replies.set(id, message._text);
+    return { _accepted: true, _external_message_id: `mock-out-${id}`,
+      _accepted_at: Date.now() };
+  }
+
+  async turn(value: string): Promise<string> {
+    if (!this.#ready || !this.#runtime) {
+      throw new AgentAdkError("E_ADK_NOT_READY", "Mock Channel is not ready");
+    }
+    const id = `mock-in-${++this.#sequence}`;
+    this.#replies.set(id, undefined);
+    try {
+      // The bound runtime injects channel identity and enters _x.execute.
+      const response: XResponseData = await this.#runtime.receive({
+        _external_user_id: "mock-participant",
+        _external_conversation_id: "mock-conversation",
+        _external_message_id: id, _text: value,
+      });
+      const reply = this.#replies.get(id);
+      if (response._ok !== true || reply === undefined) {
+        throw new AgentAdkError("E_ADK_MOCK_TURN", "Mock turn did not produce an accepted reply");
+      }
+      return reply;
+    } finally {
+      this.#replies.delete(id);
+    }
+  }
+}
+
+class FoundationAgent extends XAgent {
+  constructor(name: string, channel: FoundationChannel, private readonly model: MockTextModel) {
+    super({ _name: name, _channels: [channel] });
+  }
+
+  protected override async onMessage(message: XAgentInboundMessage): Promise<XChannelOutboundMessage> {
+    // Deliberately local and deterministic: no provider registry or network.
+    return { _external_conversation_id: message._external_conversation_id,
+      _text: this.model._text, _reply_to_external_message_id: message._external_message_id };
+  }
+}
+
+// This lease only coordinates this opt-in facade. XNode remains Core owner
+// and independently rejects foreign/duplicate hosts. Its globals are untouched.
+let activeHost: symbol | undefined;
+
+/** Construct without I/O. start() owns fresh XNode files and explicit HTTP. */
+export function createAgent(options: AgentFoundationOptions): AgentFoundation {
+  const config = record(options, ["_name", "_model", "_channel", "_host", "_plugins"]);
+  const model = record(config._model, ["_type", "_text"]);
+  const channelConfig = record(config._channel, ["_type", "_id"]);
+  const host = record(config._host, ["_work_folder", "_listen"]);
+  const listen = record(host._listen, ["_host", "_port"]);
+  if (model._type !== "mock-text" || channelConfig._type !== "mock" ||
+      (config._plugins !== undefined && (!Array.isArray(config._plugins) || config._plugins.length !== 0)) ||
+      (listen._host !== "127.0.0.1" && listen._host !== "::1") ||
+      !Number.isSafeInteger(listen._port) || Number(listen._port) < 0 || Number(listen._port) > 65535) {
+    throw new AgentAdkError("E_ADK_CONFIG", "Foundation requires explicit mock, zero plugins and loopback listener");
+  }
+  const folder = text(host._work_folder);
+  if (!isAbsolute(folder)) {
+    throw new AgentAdkError("E_ADK_CONFIG", "Foundation work folder must be absolute and new");
+  }
+  const address = listen._host as "127.0.0.1" | "::1";
+  const port = listen._port as number;
+  const channel = new FoundationChannel(text(channelConfig._id));
+  const agent = new FoundationAgent(text(config._name), channel, mockTextModel({ _text: text(model._text) }));
+  const lease = Symbol("adk-host");
+  let state: AgentFoundationStatus["_state"] = "created";
+  let node: XNode | undefined;
+  let starting: Promise<void> | undefined;
+  let closing: Promise<void> | undefined;
+  let cleanup: Promise<void> | undefined;
+  const turns = new Set<Promise<string>>();
+
+  function closeResources(): Promise<void> {
+    return cleanup ??= (async () => {
+      try {
+        try { await agent.stopChannels(); }
+        finally { await node?.stop(); }
+      } finally {
+        if (activeHost === lease) activeHost = undefined;
+      }
+    })();
+  }
+
+  function assertStarting(): void {
+    if (state !== "starting") throw new AgentAdkError("E_ADK_CLOSED", "Foundation is closing");
+  }
+
+  function start(): Promise<void> {
+    if (state === "closing" || state === "closed") {
+      return Promise.reject(new AgentAdkError("E_ADK_CLOSED", "Use a fresh process after Foundation close"));
+    }
+    if (starting) return starting;
+    state = "starting";
+    starting = (async () => {
+      try {
+        if (activeHost || _x.isRunning()) {
+          throw new AgentAdkError("E_ADK_HOST_IN_USE", "Foundation requires one host per fresh process");
+        }
+        activeHost = lease;
+        // Exclusive creation refuses existing stores, settings and symlinks.
+        await mkdir(folder);
+        assertStarting();
+        node = new XNode();
+        await node.start({ _work_folder: folder, _host: address, _port: port,
+          _web_settings: { "enable-wormhole": false, "enable-ssl": false },
+          _modules: [agent] });
+        assertStarting();
+        state = "ready";
+      } catch (error) {
+        try { await closeResources(); }
+        catch { throw new AgentAdkError("E_ADK_CLEANUP", "Foundation startup and cleanup failed"); }
+        finally { state = "closed"; }
+        throw error;
+      }
+    })();
+    return starting;
+  }
+
+  function close(): Promise<void> {
+    if (closing) return closing;
+    const wasStarting = state === "starting";
+    state = "closing"; // Fence new fixture ingress immediately.
+    const stopped = wasStarting ? node?.stop() : undefined;
+    closing = (async () => {
+      try {
+        await Promise.allSettled([starting, stopped]);
+        await Promise.allSettled([...turns]);
+        await closeResources();
+      } finally { state = "closed"; }
+    })();
+    return closing;
+  }
+
+  async function testTurn(input: { _text: string }): Promise<string> {
+    if (state !== "ready") {
+      throw new AgentAdkError("E_ADK_NOT_READY", "Foundation is not ready");
+    }
+    const value = text(record(input, ["_text"])._text);
+    const turn = channel.turn(value);
+    turns.add(turn);
+    void turn.then(() => turns.delete(turn), () => turns.delete(turn));
+    return turn;
+  }
+
+  return Object.freeze({ start, close, testTurn,
+    getStatus: () => Object.freeze({ _state: state,
+      _agent: agent.getStatus(), _channels: agent.listChannels() }) });
+}

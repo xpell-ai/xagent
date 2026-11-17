@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — ADK Foundation Phase 1
+
+- Add the opt-in `@xpell/agent/adk` composition facade and a packaged mock Hello Agent example.
+- Require explicit loopback HTTP configuration and a new work folder; compose existing XNode shutdown and Agent-owned Channel teardown.
+- Preserve root exports, `new XAgent`, provider ingress/egress and existing application storage contracts.
+- This local candidate does not implement IAM, durable Agent conversation storage, external models, plugin installation or a listener-free XNode host. No version bump or publication is included.
+
 ## [2.0.8] — 2026-11-13 (unreleased candidate)
 
 - Coordinate the existing provider-neutral XAgent lifecycle and Channel contracts with XNode 2.0.8.
