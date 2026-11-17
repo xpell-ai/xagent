@@ -13,7 +13,10 @@
     "LICENSE",
     "CHANGELOG.md",
     "examples/durable-agent.mjs",
-    "docs/durable-conversations-extraction.md"
+    "docs/durable-conversations-extraction.md",
+    "examples/router-chat.mjs",
+    "examples/offline-router.mjs",
+    "docs/router-chat-runbook.md"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -101,12 +104,14 @@
   "author": "Tamir Fridman <fridman.tamir@gmail.com> (https://github.com/fridman-tamir)",
   "license": "MIT",
   "peerDependencies": {
-    "@xpell/node": "workspace:*"
+    "@xpell/node": "workspace:*",
+    "@xpell/xai-providers": "2.0.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@xpell/node": "workspace:*",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@xpell/xai-providers": "2.0.8"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -114,5 +119,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xpell-ai/xagent.git"
+  },
+  "peerDependenciesMeta": {
+    "@xpell/xai-providers": {
+      "optional": true
+    }
   }
 }

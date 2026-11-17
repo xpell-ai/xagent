@@ -64,6 +64,14 @@ function query(input: unknown): Required<ConversationQuery> {
     _external_user_id: v._external_user_id === undefined ? "mock-participant" : text(v._external_user_id) };
 }
 
+/** Internal model port; not exported from the public ADK entry. */
+export type ConversationModel = {
+  prepare(): Promise<void>;
+  start(): Promise<void>;
+  generate(input: { _context: BuiltConversationContext; _idempotency_key: string }): Promise<string>;
+  close(): Promise<void>;
+};
+
 class ConversationProfile implements FoundationAdapter {
   readonly _system_xapps_path = SYSTEM_APPS;
   readonly #repository: ConversationRepository;
@@ -77,8 +85,9 @@ class ConversationProfile implements FoundationAdapter {
   readonly #queues = new Map<string, Promise<string>>();
   readonly #reads = new Set<Promise<unknown>>();
   #closing = false;
+  readonly #modelErrors = new Map<string, AgentAdkError>();
 
-  constructor(options: DurableAgentOptions) {
+  constructor(options: DurableAgentOptions, private readonly model?: ConversationModel) {
     const c = record(options._conversations, ["_provider", "_instance_id", "_application_scope", "_history_limit", "_context"]);
     if (c._provider !== "sqlite" || !Number.isSafeInteger(c._history_limit) || Number(c._history_limit) < 1 || Number(c._history_limit) > 200) {
       throw failure("E_ADK_CONVERSATION_CONFIG", "SQLite profile requires a history limit from 1 to 200");
@@ -101,6 +110,7 @@ class ConversationProfile implements FoundationAdapter {
   }
 
   async prepareFolder(folder: string): Promise<void> {
+    await this.model?.prepare();
     const hash = createHash("sha256");
     for (const asset of ASSETS) hash.update(await readFile(join(SYSTEM_APPS, STARTER_APP_ID, asset)));
     const marker = { ...this.#identity, _schema_sha256: hash.digest("hex") };
@@ -132,11 +142,20 @@ class ConversationProfile implements FoundationAdapter {
     }
     // Existing conservative reconciliation only: never generate or resend at startup.
     await this.#repository.reconcileInterruptedOutbound(new Date());
+    await this.model?.start();
   }
 
-  async beforeModel(context: XAgentMessageContext, message: XAgentInboundMessage): Promise<void> {
+  async beforeModel(context: XAgentMessageContext, message: XAgentInboundMessage): Promise<string | void> {
     const turn = this._lifecycle.requireInboundTurn(context);
-    await this.#context.build({ _turn: turn, _actor: this.#service.resolveExternalActor(turn), _current_text: message._text });
+    const built = await this.#context.build({ _turn: turn, _actor: this.#service.resolveExternalActor(turn), _current_text: message._text });
+    if (this.model) {
+      try { return await this.model.generate({ _context: built, _idempotency_key: this.#service.xaiIdempotencyKey(turn) }); }
+      catch (error) {
+        const safe = error instanceof AgentAdkError ? error : failure("E_ADK_ROUTER_GENERATE", "Router generation failed");
+        this.#modelErrors.set(JSON.stringify([message._external_conversation_id, message._external_message_id]), safe);
+        throw safe;
+      }
+    }
   }
 
   turn(input: unknown, invoke: (message: XChannelInboundMessage) => Promise<string>): Promise<string> {
@@ -146,7 +165,12 @@ class ConversationProfile implements FoundationAdapter {
       _external_message_id: v._external_message_id === undefined ? randomUUID() : text(v._external_message_id) };
     const key = ids._external_conversation_id;
     const prior = this.#queues.get(key) ?? Promise.resolve("");
-    const turn = prior.catch(() => "").then(() => invoke(message));
+    const turn = prior.catch(() => "").then(async () => {
+      const delivery = JSON.stringify([message._external_conversation_id, message._external_message_id]);
+      try { return await invoke(message); }
+      catch (error) { throw this.#modelErrors.get(delivery) ?? error; }
+      finally { this.#modelErrors.delete(delivery); }
+    });
     this.#queues.set(key, turn);
     const clear = () => { if (this.#queues.get(key) === turn) this.#queues.delete(key); };
     void turn.then(clear, clear);
@@ -208,6 +232,7 @@ class ConversationProfile implements FoundationAdapter {
   async close(ownsGraph: boolean): Promise<void> {
     this.#closing = true;
     await Promise.allSettled([...this.#reads]);
+    await this.model?.close();
     if (!ownsGraph) return;
     let manager: XModule | undefined;
     try { manager = _x.getModule("entity-manager"); } catch { return; }
@@ -230,10 +255,15 @@ class ConversationProfile implements FoundationAdapter {
 
 /** Opt-in SQLite conversation profile. Existing createAgent remains mock-only. */
 export function createDurableAgent(options: DurableAgentOptions): DurableAgent {
+  return composeDurableAgent(options);
+}
+
+/** Internal composition only; public mock factory cannot select a model port. */
+export function composeDurableAgent(options: DurableAgentOptions, model?: ConversationModel): DurableAgent {
   const v = record(options, ["_name", "_model", "_channel", "_host", "_plugins", "_conversations"]);
   // Validate all Phase 1 configuration before any profile I/O.
   const { _conversations: _ignored, ...baseOptions } = v;
-  const profile = new ConversationProfile(options);
+  const profile = new ConversationProfile(options, model);
   const base = composeFoundation(baseOptions as AgentFoundationOptions, profile);
   const ready = () => {
     if (base.getStatus()._state !== "ready") throw failure("E_ADK_NOT_READY", "Durable Agent is not ready");
