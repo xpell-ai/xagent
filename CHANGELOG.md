@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — bounded Router chat integration
+
+- Add explicit Router model configuration and local `createRouterAgent.chat` using XNode XAI/AimeProvider, existing persistence lifecycle and bounded context.
+- Add an optional XAI Providers 2.0.8 peer, dynamically loaded only for Router mode; preserve required XNode peer and existing mock APIs.
+- Add offline HTTP contract fixtures, CLI/runbook, replay/error/timeout tests and safe credential/provider teardown.
+- No live calls, automatic retry, Actions/Tools, IAM, schema migration, global runtime change, version bump or publication.
+
 ## Unreleased — ADK durable conversations Phase 2A
 
 - Add opt-in `createDurableAgent`, bounded history/context and a retained-store example.

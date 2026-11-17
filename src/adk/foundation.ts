@@ -43,7 +43,7 @@ export type FoundationAdapter = {
   prepareFolder(folder: string): Promise<void>;
   _system_xapps_path: string;
   afterStart(): Promise<void>;
-  beforeModel(context: XAgentMessageContext, message: XAgentInboundMessage): Promise<void>;
+  beforeModel(context: XAgentMessageContext, message: XAgentInboundMessage): Promise<string | void>;
   replay(message: XChannelInboundMessage): Promise<string>;
   turn(input: unknown, invoke: (message: XChannelInboundMessage) => Promise<string>): Promise<string>;
   close(ownsGraph: boolean): Promise<void>;
@@ -151,10 +151,10 @@ class FoundationAgent extends XAgent {
   }
 
   protected override async onMessage(message: XAgentInboundMessage, context: XAgentMessageContext): Promise<XChannelOutboundMessage> {
-    if (this.adapter) await this.adapter.beforeModel(context, message);
-    // Deliberately local and deterministic: no provider registry or network.
+    const generated = await this.adapter?.beforeModel(context, message);
+    // Default mode stays a local fixed mock; explicit composition may supply text.
     return { _external_conversation_id: message._external_conversation_id,
-      _text: this.model._text, _reply_to_external_message_id: message._external_message_id };
+      _text: generated ?? this.model._text, _reply_to_external_message_id: message._external_message_id };
   }
 }
 

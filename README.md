@@ -1,5 +1,20 @@
 # @xpell/agent
 
+## Router chat review candidate
+
+The opt-in `createRouterAgent` / `routerTextModel` facade sends bounded durable
+conversation context through existing XNode XAI and AimeProvider. It adds a local
+programmatic `chat` API and CLI, with no new chat HTTP route. Explicit endpoint,
+model, credential environment reference, timeout, request consent and fail-closed
+policy are required. Install optional peer `@xpell/xai-providers@2.0.8` only for
+Router mode; the existing mock APIs remain unchanged. No published package
+contains this candidate.
+
+See the [Yehudit local chat runbook](docs/router-chat-runbook.md) for a reproducible
+offline fixture, fresh-process restart, safe error codes, ownership limits and
+the separately gated live procedure. No live/paid call is authorized by the
+runbook. No tools/Actions, IAM service, retry worker or package release is added.
+
 ## Opt-in ADK Foundation Phase 1 (unpublished local candidate)
 
 `@xpell/agent/adk` adds a headless, zero-plugin composition facade. The root

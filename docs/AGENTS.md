@@ -82,6 +82,13 @@ No product bindings, IAM service, Actions/Tools, schema migration, automatic
 resend or host-global behavior belongs in this bounded profile. Keep copied
 source provenance and isolated restart/teardown tests with the implementation.
 
+The separately approved bounded Router-chat adapter is also opt-in composition:
+reuse XNode XAI and AimeProvider through its optional provider peer, with explicit
+configuration/credential reference and no transport duplication. Local chat uses
+the owned Channel/lifecycle and durable context. Do not add unauthenticated public
+chat HTTP, fallback/retry, live-call defaults, billing logic or Actions execution.
+Keep provider cleanup and one-process registry limits explicit in the runbook.
+
 ## XAgent Contract
 
 `XAgent` must remain the only XModule in this package. Its `_name` is both the
