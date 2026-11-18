@@ -89,6 +89,14 @@ the owned Channel/lifecycle and durable context. Do not add unauthenticated publ
 chat HTTP, fallback/retry, live-call defaults, billing logic or Actions execution.
 Keep provider cleanup and one-process registry limits explicit in the runbook.
 
+The separately approved T1 read-tool registry is an opt-in `adk/tools` subpath.
+It owns only typed immutable read definitions, explicit trusted composition
+contexts, deny-by-default policy, bounded cooperative invocation and local
+receipts. Keep it independent of host/model/store startup; no model tool loop,
+durable Actions, IAM, plugin loading or product imports. Existing factories and
+Router result rejection remain unchanged. Document that callbacks are trusted
+code, context binding is not authentication and receipts are process-local.
+
 ## XAgent Contract
 
 `XAgent` must remain the only XModule in this package. Its `_name` is both the

@@ -16,7 +16,9 @@
     "docs/durable-conversations-extraction.md",
     "examples/router-chat.mjs",
     "examples/offline-router.mjs",
-    "docs/router-chat-runbook.md"
+    "docs/router-chat-runbook.md",
+    "docs/read-tools.md",
+    "examples/read-tools.mjs"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -30,6 +32,10 @@
     "./adk": {
       "types": "./dist/adk.d.ts",
       "import": "./dist/adk.js"
+    },
+    "./adk/tools": {
+      "types": "./dist/adk/tools.d.ts",
+      "import": "./dist/adk/tools.js"
     },
     "./package.json": "./package.json"
   },
