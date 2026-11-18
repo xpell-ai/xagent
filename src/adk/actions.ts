@@ -16,6 +16,7 @@ import type { AgentActionRecord, AgentActionState } from "./starter/actions/type
 import { validateCapabilityArguments, type AgentCapability, type AgentSideEffectOutcome } from "./starter/capabilities/AgentCapability.js";
 import { DurableActionError, fail, data, text, integer, hash, frozen, jsonObject, safeFailure } from "./actions/validation.js";
 import { registerActionHost } from "./actions/host.js";
+import { pluginReconciliationGuard } from "./plugins/host.js";
 export { DurableActionError } from "./actions/validation.js";
 
 export type ActionContextInput = Readonly<{ _actor_id: string; _conversation_id: string; _delivery_id: string }>;
@@ -194,11 +195,11 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
     _state: r._state, _binding_hash: r._binding_hash, _confirmation_summary: r._confirmation_summary, _expires_at: new Date(r._expires_at).toISOString(),
     _uncertain: r._state === "executing", ...(r._result ? { _result: jsonObject(r._result, bytes) } : {}),
     ...(r._failure_code ? { _failure_code: /^E_[A-Z0-9_]{1,80}$/.test(r._failure_code) ? r._failure_code : "E_ADK_ACTION_UNCERTAIN" } : {}) });
-  async function request<R>(ctx: TrustedActionContext, fn: (op: Operation) => Promise<R>): Promise<R> {
+  async function request<R>(ctx: TrustedActionContext, fn: (op: Operation) => Promise<R>, terminal?: () => void): Promise<R> {
     context(ctx); if (base.getStatus()._state !== "ready") return fail("E_ADK_ACTION_NOT_READY");
     if (operations.size >= 16 || callbacks.size >= 16) return fail("E_ADK_ACTION_BUSY");
     const op = { controller: new AbortController(), deadline: performance.now() + timeout }; operations.add(op);
-    const work = (async () => { try { return await fn(op); } catch (e) { throw safeFailure(e); } finally { operations.delete(op); } })();
+    const work = (async () => { try { const value = await fn(op); terminal?.(); return value; } catch (e) { throw safeFailure(e); } finally { operations.delete(op); } })();
     pending.add(work); void work.then(() => pending.delete(work), () => pending.delete(work)); return work;
   }
   const adapter: FoundationAdapter = {
@@ -283,13 +284,26 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
     cancel(input: { _action_id: string; _binding_hash: string }, ctx: TrustedActionContext) { return request(ctx, op => control(input, ctx, "cancel", op)); },
     get(id: string, ctx: TrustedActionContext) { return request(ctx, async op => { const r = await row(id, ctx); await authorize("inspect", getDefinition(r._capability_id), ctx, op, r._arguments, r._authorized_scope); return view(r); }); },
     reconcile(input: { _limit: number; _after_id?: string }, ctx: TrustedActionContext) {
+      let terminal = () => {};
       return request(ctx, async op => {
+        const registryGuard = pluginReconciliationGuard(policy);
+        const checkScan = () => { check(op); registryGuard?.(); };
+        terminal = checkScan;
+        const authorizeRow = async (r: Readonly<AgentActionRecord>) => {
+          checkScan(); verified(r, ctx); const d = getDefinition(r._capability_id);
+          if (d._revision !== r._capability_revision) return fail("E_ADK_ACTION_UNAVAILABLE");
+          await authorize("reconcile", d, ctx, op, r._arguments, r._authorized_scope);
+          checkScan();
+        };
         const x = data(input, ["_limit", "_after_id"]), limit = integer(x._limit, 100), after = x._after_id === undefined ? undefined : text(x._after_id);
         if (reconciling || confirms || callbacks.size) return fail("E_ADK_ACTION_BUSY");
         // No scan is permitted without an explicit actor-scoped policy grant.
         await authorize("reconcile", { _id: "actions.reconcile" } as AnyAction, ctx, op, {});
         if (reconciling || confirms || callbacks.size) return fail("E_ADK_ACTION_BUSY"); reconciling = true;
         try { return await service.reconcileUnfinished({ _requester_participant_id: actorId(ctx), _conversation_id: turn(ctx)._conversation_id, _limit: limit, _after_id: after,
+          _authorize_row: authorizeRow,
+          _authorize_return: async () => { await authorize("reconcile", { _id: "actions.reconcile" } as AnyAction, ctx, op, {}); checkScan(); },
+          _check_authority: checkScan,
           _read_committed_outcome: async r => {
             verified(r, ctx); const d = getDefinition(r._capability_id);
             if (d._revision !== r._capability_revision) return fail("E_ADK_ACTION_UNAVAILABLE");
@@ -302,7 +316,7 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
             return outcome(v._outcome);
           } }); }
         finally { reconciling = false; }
-      });
+      }, () => terminal());
     },
   };
   registerActionHost(api, Object.freeze({ _name: name, _instance_id: instance, _application_scope: scope,

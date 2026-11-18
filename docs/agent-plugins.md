@@ -99,9 +99,20 @@ results: T1/T2 replay can return a stored result without calling a handler.
 Do not compose contributions into an undecorated registry/host. Native T1 schema,
 limits, branded context, safe errors and replay authorization remain; native T2
 prepare/confirm/cancel/inspect/execute/reconcile and uncertainty rules remain.
-T2's `actions.reconcile` scan requires an active plugin plus explicit application
-policy; every row's registered Action is separately checked. Base non-plugin
-contributions should use separate registries/hosts; unknown IDs are denied.
+T2's `actions.reconcile` scan requires explicit application scan policy and an
+active registry; an available plugin only admits scanning and never authorizes
+another plugin's rows. Private reconciliation gates preflight every page row,
+including confirmed rows and pagination lookahead, before accounting or repair.
+Any denied row rejects the whole batch without returning its counts/cursor;
+rows are never silently skipped. Current row authority is checked again before
+repair and terminal disclosure, alongside application scan policy. A private
+registry lifecycle/grant-epoch guard fences the scan through terminal return,
+including revoke-then-restore and shutdown while storage awaits. Existing public
+pagination, schemas and confirmation/claim rules are unchanged. Repair remains
+per-row, not a transaction across the page; if authority changes after an earlier
+authorized repair committed, rejection never authorizes retrying its effect.
+Base non-plugin contributions should use separate registries/hosts; unknown IDs
+are denied.
 
 For T3, use those real decorated T1/T2 instances and explicitly gate
 `expose-action` using `plugins.isAvailable(pluginId)` plus application discovery
@@ -118,6 +129,11 @@ updates. Restoring a grant may allow a *new* authorized replay, never resurrecti
 of a previously invalidated callback. Already-dispatched external work cannot be
 undone. If an Action result becomes unavailable after an effect, retain T2's
 uncertain outcome and use committed evidence under new authority; never resend.
+Only registry-created availability/revocation errors are bridged to native Action
+DENIED during preparation and committed-evidence callbacks. Thrown `_code` values
+and public lookalike errors are not trusted as registry authority. Handler failures
+after potential effects remain UNCERTAIN; that boundary is never converted into
+a retryable denial.
 
 ## Lifecycle and failure ownership
 
@@ -178,12 +194,15 @@ Run from reviewed source with Node 22/24 and matching native SQLite ABI:
 ```sh
 pnpm build
 pnpm test
-node --test tests/plugins.test.mjs tests/plugins-integration.test.mjs
+node --test tests/plugins.test.mjs tests/plugins-integration.test.mjs tests/plugins-authorization.test.mjs
 ```
 
 The integration fixtures use disposable SQLite profiles and an ephemeral
 loopback Router fixture only. They verify mixed Read/Action prepare-only output,
 separate confirmation, no extra request on replay, revocation/stop retained-result
-denial and fresh-process allowed/denied replay. Existing crash, reservation,
+denial and fresh-process allowed/denied replay. The authorization regressions
+cover hot grant/policy denial, cold ungranted confirmed rows, lookahead, storage
+and terminal races, preparation/evidence denial identity, spoofed errors and
+post-effect uncertainty with a synthetic SQLite receipt target. Existing crash, reservation,
 limits and downstream suites remain required. Local tests are not independent
 review, live provider/OAuth qualification, publication or deployment approval.

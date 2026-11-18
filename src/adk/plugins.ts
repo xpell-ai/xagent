@@ -1,3 +1,5 @@
+import { registerPluginActionPolicy } from "./plugins/host.js";
+import { StarterActionError, STARTER_ACTION_ERROR_CODES } from "./starter/actions/ActionService.js";
 import { types } from "node:util";
 import { defineTool, ReadToolError, type ToolPolicy, type createToolRegistry } from "./tools.js";
 import { defineAction, type ActionPolicy, type createDurableActions } from "./actions.js";
@@ -45,7 +47,13 @@ export type AgentPluginRegistry = Readonly<{
   actionPolicy(policy?: ActionPolicy): ActionPolicy;
   start(): Promise<void>; stop(): Promise<void>; dispose(): Promise<void>;
 }>;
-const fail = (code: AgentPluginErrorCode): never => { throw new AgentPluginError(code); };
+const registryDenials = new WeakSet<object>();
+const fail = (code: AgentPluginErrorCode): never => {
+  const error = new AgentPluginError(code);
+  if (code === "E_ADK_PLUGIN_DENIED") registryDenials.add(error);
+  throw error;
+};
+const registryDenied = (error: unknown): boolean => !!error && typeof error === "object" && registryDenials.has(error);
 const owners = new WeakSet<object>();
 const idPattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -124,7 +132,8 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
   const opts = data(options, ["_peers"]), hostPeers = peers(opts._peers);
   const entries = new Map<string, Entry>(), toolOwners = new Map<string, Entry>(), actionOwners = new Map<string, Entry>();
   let catalog: AgentPluginContributions = Object.freeze({ _tools: Object.freeze([]), _actions: Object.freeze([]) });
-  let sealed = false, stopping = false, disposed = false, epoch = 0;
+  let sealed = false, stopping = false, disposed = false, startupComplete = false, epoch = 0;
+  const scanPolicies = new Set<Promise<unknown>>();
   let startup: Promise<void> | undefined, shutdown: Promise<void> | undefined, disposal: Promise<void> | undefined;
   const granted = (e: Entry) => (["_host", "_agent"] as const).every(k => e.plugin._permissions[k].every(p => e.grants[k].includes(p)));
   const available = (e: Entry): boolean => !stopping && !disposed && e.state === "ready" && granted(e) &&
@@ -138,6 +147,21 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
     e.pending.add(work);
     try { const result = await work; check(); return result; }
     finally { e.pending.delete(work); }
+  }
+  const scanAvailable = () => startupComplete && !stopping && !disposed && [...entries.values()].some(available);
+  function beginReconciliation(): () => void {
+    const authorizationEpoch = epoch;
+    const check = () => {
+      if (!scanAvailable() || epoch !== authorizationEpoch) throw new DurableActionError("E_ADK_ACTION_DENIED");
+    };
+    check(); return check;
+  }
+  async function scanPolicy(input: Parameters<ActionPolicy>[0], policy: ActionPolicy): Promise<boolean> {
+    const check = beginReconciliation();
+    const work = Promise.resolve().then(() => { check(); return policy(input); });
+    scanPolicies.add(work);
+    try { const result = await work; check(); return result; }
+    finally { scanPolicies.delete(work); }
   }
   async function cleanup(e: Entry, terminal: boolean): Promise<void> {
     if (e.disposed) return;
@@ -167,9 +191,19 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
       const e: Entry = { plugin: p, state: "registered", grants: empty, controller: new AbortController(), touched: false, disposed: false, pending: new Set() };
       const reads = (p._tools ?? []).map(d => Object.freeze({ ...d, _handler: (...args: never[]) => owned(e, () => d._handler(...args)) }));
       const actions = (p._actions ?? []).map(d => Object.freeze({ ...d,
-        _prepare_action: (...args: never[]) => owned(e, () => d._prepare_action(...args)),
+        _prepare_action: async (...args: never[]) => {
+          try { return await owned(e, () => d._prepare_action(...args)); }
+          catch (error) {
+            // The generic preparer preserves its native XError denial path.
+            if (registryDenied(error)) throw new StarterActionError(STARTER_ACTION_ERROR_CODES.NOT_ALLOWED, "Agent Action is not allowed in this context");
+            throw error;
+          }
+        },
         _handler: (...args: never[]) => owned(e, () => d._handler(...args)),
-        ...(d._read_committed_outcome ? { _read_committed_outcome: (...args: never[]) => owned(e, () => d._read_committed_outcome!(...args)) } : {}),
+        ...(d._read_committed_outcome ? { _read_committed_outcome: async (...args: never[]) => {
+          try { return await owned(e, () => d._read_committed_outcome!(...args)); }
+          catch (error) { if (registryDenied(error)) throw new DurableActionError("E_ADK_ACTION_DENIED"); throw error; }
+        } } : {}),
       }));
       entries.set(p._id, e); owners.add(input);
       reads.forEach(d => toolOwners.set(d._id, e)); actions.forEach(d => actionOwners.set(d._id, e));
@@ -194,17 +228,18 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
     },
     actionPolicy(policy) {
       if (policy !== undefined && typeof policy !== "function") return fail("E_ADK_PLUGIN_CONFIG");
-      return async input => {
-        // Reconcile scan is application-owned; each row is still checked below.
+      const decorated: ActionPolicy = async input => {
+        // A scan is application-authorized. No plugin stands in for another row.
         if (input._phase === "reconcile" && input._capability_id === "actions.reconcile") {
-          const owner = [...entries.values()].find(available);
-          if (!owner || !policy) return false;
-          try { return await owned(owner, () => policy(input)); } catch { throw new DurableActionError("E_ADK_ACTION_DENIED"); }
+          if (!policy || !scanAvailable()) return false;
+          try { return await scanPolicy(input, policy); } catch { throw new DurableActionError("E_ADK_ACTION_DENIED"); }
         }
         const e = actionOwners.get(input._capability_id);
         if (!e || !available(e) || !policy) return false;
         try { return await owned(e, () => policy(input)); } catch { throw new DurableActionError("E_ADK_ACTION_DENIED"); }
       };
+      registerPluginActionPolicy(decorated, Object.freeze({ beginReconciliation }));
+      return decorated;
     },
     start() {
       if (stopping || disposed) return Promise.reject(new AgentPluginError("E_ADK_PLUGIN_STATE"));
@@ -223,6 +258,7 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
             else { e.state = "not_ready"; e.error = "E_ADK_PLUGIN_DENIED"; await cleanup(e, true); }
           } catch { e.state = "not_ready"; e.error = "E_ADK_PLUGIN_START"; await cleanup(e, true); }
         }
+        startupComplete = !stopping;
       });
       return startup;
     },
@@ -232,6 +268,7 @@ export function createAgentPluginRegistry(options: Readonly<{ _peers: Readonly<R
       for (const e of entries.values()) e.controller.abort();
       shutdown = (async () => {
         await startup;
+        await Promise.allSettled([...scanPolicies]);
         for (const e of [...entries.values()].reverse()) { if (!e.disposed) e.state = "stopping"; await cleanup(e, false); }
       })();
       return shutdown;

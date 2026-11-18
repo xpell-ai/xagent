@@ -2,6 +2,10 @@
 
 ## Unreleased — optional Agent Plugins T4
 
+- Authorize every reconciliation row and lookahead before counts/cursors/repair; recheck terminal policy and registry epoch without changing public pagination or schemas.
+- Bridge only registry-originated prepare/evidence denial to native Action DENIED; preserve post-effect uncertainty and reject thrown-code/lookalike authority.
+- Add hot/cold, lookahead, terminal-race, denial identity and committed-receipt regressions.
+
 - Add opt-in `adk/plugins` typed explicit registration, immutable definitions and cross-kind collision rejection.
 - Require exact contract/peer/plugin compatibility and explicit host/agent grants; decorate existing T1/T2 policies, including replay.
 - Isolate failed startup, fence revoked/in-flight work and drain before reverse terminal stop/dispose; no automatic retries.

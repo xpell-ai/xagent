@@ -616,6 +616,10 @@ export class ActionService {
     _requester_participant_id: string;
     _conversation_id: string;
     _read_committed_outcome: (action: Readonly<AgentActionRecord>) => Promise<AgentSideEffectOutcome | null>;
+    /** Private composition gates; include confirmed rows and pagination lookahead. */
+    _authorize_row?: (action: Readonly<AgentActionRecord>) => Promise<void>;
+    _authorize_return?: () => Promise<void>;
+    _check_authority?: () => void;
     _limit?: number;
     _after_id?: string;
   }): Promise<Readonly<{ _completed: number; _uncertain: number; _confirmed: number;
@@ -623,9 +627,15 @@ export class ActionService {
     const limit = input._limit ?? 100;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("E_STARTER_ACTION_SCAN_LIMIT");
     const rows = await this.#repository.listUnfinished(limit + 1, input._after_id, input._requester_participant_id, input._conversation_id);
+    // Reject the whole page before accounting/repair, including lookahead.
+    for (const action of rows) {
+      this.#verifyBinding(action);
+      await input._authorize_row?.(structuredClone(action));
+      input._check_authority?.();
+    }
     let completed = 0, uncertain = 0, confirmed = 0;
     for (const action of rows.slice(0, limit)) {
-      this.#verifyBinding(action);
+      input._check_authority?.();
       if (action._state === "confirmed") { confirmed++; continue; }
       if (action._confirmed_by_participant_id !== action._requester_participant_id ||
           !action._confirmed_at || !action._confirmation_message_id || !action._execution_started_at) {
@@ -633,6 +643,8 @@ export class ActionService {
       }
       // Clone to keep product readers from mutating the audit envelope.
       const outcome = await input._read_committed_outcome(structuredClone(action));
+      await input._authorize_row?.(structuredClone(action));
+      input._check_authority?.();
       if (!outcome) {
         await this.#repository.compareAndSet({ _id: action._id, _binding_hash: action._binding_hash,
           _from: "executing", _to: "executing",
@@ -651,6 +663,10 @@ export class ActionService {
           // An empty code clears an earlier uncertain marker without changing the schema.
           _failure_code: outcome._status === "failed" ? outcome._failure_code : "" } });
     }
+    // Recheck current row/application authority after asynchronous evidence/storage.
+    await input._authorize_return?.();
+    for (const action of rows) await input._authorize_row?.(structuredClone(action));
+    input._check_authority?.();
     return Object.freeze({ _completed: completed, _uncertain: uncertain, _confirmed: confirmed,
       _scan_truncated: rows.length > limit,
       ...(rows.length > limit ? { _next_after_id: rows[limit - 1]._id } : {}) });
