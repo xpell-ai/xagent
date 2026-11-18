@@ -1,4 +1,4 @@
-import { defineAction, createDurableActions, type TrustedActionContext, type ActionView } from "@xpell/agent/adk/actions";
+import { defineAction, createDurableActions, type TrustedActionContext, type ActionProposal } from "@xpell/agent/adk/actions";
 const record = defineAction({ _id: "sample.record", _description: "Local synthetic action", _revision: "1",
   _input_schema: { type: "object", additionalProperties: false, properties: { text: { type: "string", minLength: 1, maxLength: 64 } }, required: ["text"] },
   _prepare_action: ({ _arguments }) => { const s: string = _arguments.text; return { _arguments, _authorized_scope: { target: "fixture" }, _confirmation_summary: s }; },
@@ -13,8 +13,19 @@ const actions = createDurableActions({ _name: "fixture", _instance_id: "fixture"
   _host: { _work_folder: "/synthetic-only", _listen: { _host: "127.0.0.1", _port: 0 } }, _actions: [record],
   _limits: { _timeout_ms: 1000, _max_json_bytes: 1024 }, _policy: i => i._context._actor_id === "fixture" });
 declare const context: TrustedActionContext;
-const proposal: Promise<ActionView> = actions.prepare({ _capability_id: "sample.record", _arguments: { text: "hello" } }, context);
+const proposal: Promise<ActionProposal> = actions.prepare({ _capability_id: "sample.record", _arguments: { text: "hello" } }, context);
 void proposal;
+proposal.then(p => {
+  const hash: string = p._binding_hash; void hash;
+  // @ts-expect-error Prepare never exposes retained outcome data.
+  void p._result;
+  // @ts-expect-error Prepare never exposes failure diagnostics.
+  void p._failure_code;
+  // @ts-expect-error Prepare never discloses uncertain or terminal state.
+  void p._state;
+  // @ts-expect-error Inspect authority is required for uncertainty.
+  void p._uncertain;
+});
 // @ts-expect-error Only registered names are accepted.
 actions.prepare({ _capability_id: "missing", _arguments: { text: "hello" } }, context);
 // @ts-expect-error Required schema fields are inferred.

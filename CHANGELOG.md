@@ -2,6 +2,8 @@
 
 ## Unreleased — durable Actions T2
 
+- Restrict prepare/replay to proposal metadata, reject argument accessors/proxies before callbacks and preserve validated snapshot identity.
+- Preserve prepared-resource policy DENIED classification; add adversarial replay, validation and denial regressions.
 - Add opt-in `adk/actions` with typed fixed definitions, trusted actor/application/conversation context and deny-by-default policy.
 - Reuse reviewed generic Starter proposal binding, 15-minute expiry, confirmation/cancellation and conditional SQLite execution claims in a separate five-entity Action profile.
 - Reauthorize confirmation and execution, require exact proposal hash and distinct confirmation delivery, and retain uncertain claims without automatic retry.

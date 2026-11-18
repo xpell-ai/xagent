@@ -11,7 +11,7 @@ import { ConversationRepository, STARTER_APP_ID, STARTER_APP_ENV } from "./start
 import { applicationScopeKey, createAgentApplicationScope, type AgentApplicationScope } from "./starter/persistence/AgentApplicationScope.js";
 import { deterministicId } from "./starter/persistence/keys.js";
 import { ActionRepository } from "./starter/actions/ActionRepository.js";
-import { ActionService, actionBindingHash } from "./starter/actions/ActionService.js";
+import { ActionService, actionBindingHash, StarterActionError, STARTER_ACTION_ERROR_CODES } from "./starter/actions/ActionService.js";
 import type { AgentActionRecord, AgentActionState } from "./starter/actions/types.js";
 import { validateCapabilityArguments, type AgentCapability, type AgentSideEffectOutcome } from "./starter/capabilities/AgentCapability.js";
 import { DurableActionError, fail, data, text, integer, hash, frozen, jsonObject, safeFailure } from "./actions/validation.js";
@@ -39,8 +39,9 @@ export type DurableActionDefinition<S extends ToolInputSchema, Id extends string
 type AnyAction = Readonly<{ _id: string; _description: string; _revision: string; _input_schema: ToolInputSchema;
   _prepare_action: (...args: never[]) => unknown; _handler: (...args: never[]) => unknown;
   _read_committed_outcome?: (...args: never[]) => unknown }>;
-export type ActionView = Readonly<{ _action_id: string; _capability_id: string; _revision: string; _state: AgentActionState;
-  _binding_hash: string; _confirmation_summary: string; _expires_at: string; _uncertain: boolean;
+export type ActionProposal = Readonly<{ _action_id: string; _capability_id: string; _revision: string;
+  _binding_hash: string; _confirmation_summary: string; _expires_at: string }>;
+export type ActionView = ActionProposal & Readonly<{ _state: AgentActionState; _uncertain: boolean;
   _result?: ToolJsonObject; _failure_code?: string }>;
 export type ActionPolicy = (input: Readonly<{ _phase: "prepare" | "confirm" | "execute" | "cancel" | "inspect" | "reconcile";
   _capability_id: string; _context: TrustedActionContext; _arguments: ToolJsonObject; _authorized_scope?: ToolJsonObject; _signal: AbortSignal }>) => boolean | Promise<boolean>;
@@ -55,7 +56,7 @@ export type DurableActions<T extends readonly AnyAction[]> = Readonly<{
   start(): Promise<void>; close(): Promise<void>;
   bindContext(input: ActionContextInput): TrustedActionContext;
   prepare<N extends T[number]["_id"]>(input: Readonly<{ _capability_id: N;
-    _arguments: ToolArguments<Extract<T[number], { _id: N }>["_input_schema"]> }>, context: TrustedActionContext): Promise<ActionView>;
+    _arguments: ToolArguments<Extract<T[number], { _id: N }>["_input_schema"]> }>, context: TrustedActionContext): Promise<ActionProposal>;
   confirm(input: Readonly<{ _action_id: string; _binding_hash: string }>, context: TrustedActionContext): Promise<ActionView>;
   cancel(input: Readonly<{ _action_id: string; _binding_hash: string }>, context: TrustedActionContext): Promise<ActionView>;
   get(actionId: string, context: TrustedActionContext): Promise<ActionView>;
@@ -95,6 +96,14 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
   const service = new ActionService({ _repository: repository, _application_scope: scope, _now: now });
   let closing = false, confirms = 0, reconciling = false;
   const contexts = new WeakSet<object>(), operations = new Set<Operation>(), pending = new Set<Promise<unknown>>(), callbacks = new Set<Promise<unknown>>();
+  // Only owned immutable snapshots are memoized, never a caller's mutable input.
+  const argumentSnapshots = new WeakMap<object, AgentCapability["_input_schema"]>();
+  function snapshotArguments(cap: Pick<AgentCapability, "_input_schema">, value: unknown): ToolJsonObject {
+    if (value && typeof value === "object" && argumentSnapshots.get(value) === cap._input_schema) return value as ToolJsonObject;
+    const snapshot = jsonObject(value, bytes, "E_ADK_ACTION_CONFIG");
+    validateCapabilityArguments(cap as AgentCapability, snapshot);
+    argumentSnapshots.set(snapshot, cap._input_schema); return snapshot;
+  }
   function check(op?: Operation): void {
     if (closing) return fail("E_ADK_ACTION_CLOSED");
     if (op && (op.controller.signal.aborted || performance.now() >= op.deadline)) { op.controller.abort(); return fail("E_ADK_ACTION_TIMEOUT"); }
@@ -114,7 +123,8 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
     check(op); if (!policy) return fail("E_ADK_ACTION_DENIED");
     let allowed = false;
     try { allowed = await callback(op, () => policy(Object.freeze({ _phase: phase, _capability_id: d._id, _context: ctx,
-      _arguments: jsonObject(args, bytes), ...(authorized === undefined ? {} : { _authorized_scope: jsonObject(authorized, bytes) }), _signal: op.controller.signal }))) === true; }
+      _arguments: d._input_schema ? snapshotArguments(d, args) : jsonObject(args, bytes),
+      ...(authorized === undefined ? {} : { _authorized_scope: jsonObject(authorized, bytes) }), _signal: op.controller.signal }))) === true; }
     catch (e) { if (e instanceof DurableActionError) throw e; return fail("E_ADK_ACTION_DENIED"); }
     if (!allowed) return fail("E_ADK_ACTION_DENIED");
   }
@@ -154,12 +164,19 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
       _prepare_action: async input => {
         check(op);
         const raw = data(await callback(op, () => (d._prepare_action as (x: unknown) => unknown)(Object.freeze({
-          _arguments: jsonObject(input._arguments, bytes), _context: ctx, _signal: op.controller.signal }))),
+          _arguments: snapshotArguments(d, input._arguments), _context: ctx, _signal: op.controller.signal }))),
           ["_arguments", "_authorized_scope", "_confirmation_summary"], "E_ADK_ACTION_RESULT");
-        const prepared = { _arguments: jsonObject(raw._arguments, bytes), _authorized_scope: jsonObject({
+        const prepared = { _arguments: snapshotArguments(d, raw._arguments), _authorized_scope: jsonObject({
           _caller_binding: hash(tuple(ctx)), _resource: jsonObject(raw._authorized_scope, bytes) }, bytes),
           _confirmation_summary: text(raw._confirmation_summary, 2000, "E_ADK_ACTION_RESULT") };
-        await authorize(phase, d, ctx, op, prepared._arguments, prepared._authorized_scope);
+        try { await authorize(phase, d, ctx, op, prepared._arguments, prepared._authorized_scope); }
+        catch (e) {
+          // The generic service preserves XError authorization failures. Bridge
+          // only this known denial; raw callback errors still stay private.
+          if (e instanceof DurableActionError && e._code === "E_ADK_ACTION_DENIED")
+            throw new StarterActionError(STARTER_ACTION_ERROR_CODES.NOT_ALLOWED, "Agent Action is not allowed in this context");
+          throw e;
+        }
         return frozen(prepared);
       },
       _handler: async input => {
@@ -169,6 +186,9 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
       },
     };
   }
+  const proposal = (r: AgentActionRecord): ActionProposal => frozen({ _action_id: r._id, _capability_id: r._capability_id,
+    _revision: r._capability_revision, _binding_hash: r._binding_hash, _confirmation_summary: r._confirmation_summary,
+    _expires_at: new Date(r._expires_at).toISOString() });
   const view = (r: AgentActionRecord): ActionView => frozen({ _action_id: r._id, _capability_id: r._capability_id, _revision: r._capability_revision,
     _state: r._state, _binding_hash: r._binding_hash, _confirmation_summary: r._confirmation_summary, _expires_at: new Date(r._expires_at).toISOString(),
     _uncertain: r._state === "executing", ...(r._result ? { _result: jsonObject(r._result, bytes) } : {}),
@@ -252,10 +272,10 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
     prepare(input: { _capability_id: string; _arguments: unknown }, ctx: TrustedActionContext) {
       return request(ctx, async op => {
         const x = data(input, ["_capability_id", "_arguments"]), d = getDefinition(text(x._capability_id));
-        const cap = capability(d, ctx, op, "prepare"), args = jsonObject(validateCapabilityArguments(cap, x._arguments), bytes);
+        const cap = capability(d, ctx, op, "prepare"), args = snapshotArguments(d, x._arguments);
         await authorize("prepare", d, ctx, op, args);
         const result = await service.createPendingAction({ _capability: cap, _arguments: args, _actor: actor(ctx), _conversation: turn(ctx) });
-        verified(result, ctx); return view(result);
+        verified(result, ctx); return proposal(result);
       });
     },
     confirm(input: { _action_id: string; _binding_hash: string }, ctx: TrustedActionContext) { return request(ctx, op => control(input, ctx, "confirm", op)); },

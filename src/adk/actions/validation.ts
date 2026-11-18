@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types } from "node:util";
 import type { ToolJsonObject } from "../tools.js";
 
 export type ActionErrorCode = "E_ADK_ACTION_CONFIG" | "E_ADK_ACTION_NOT_READY" | "E_ADK_ACTION_CLOSED" |
@@ -19,7 +20,7 @@ export const fail = (code: ActionErrorCode): never => { throw new DurableActionE
 export const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 export function data(value: unknown, keys?: readonly string[], code: ActionErrorCode = "E_ADK_ACTION_CONFIG"): Record<string, unknown> {
   try {
-    if (!value || typeof value !== "object" || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return fail(code);
+    if (!value || typeof value !== "object" || types.isProxy(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return fail(code);
     const ds = Object.getOwnPropertyDescriptors(value);
     if (Reflect.ownKeys(value).some(k => typeof k !== "string" || !ds[k]?.enumerable || !("value" in ds[k]) || keys && !keys.includes(k))) return fail(code);
     return Object.fromEntries(Object.entries(ds).map(([k, v]) => [k, v.value]));
@@ -41,7 +42,7 @@ export function jsonObject(v: unknown, max: number, code: ActionErrorCode = "E_A
     if (++nodes > 1024 || depth > 8) return fail(code);
     if (x === null || typeof x === "boolean" || typeof x === "number" && Number.isFinite(x)) { add(Buffer.byteLength(JSON.stringify(x))); return x; }
     if (typeof x === "string") return string(x);
-    if (!x || typeof x !== "object" || seen.has(x)) return fail(code);
+    if (!x || typeof x !== "object" || types.isProxy(x) || seen.has(x)) return fail(code);
     seen.add(x); let out: unknown;
     if (Array.isArray(x)) {
       const ds = Object.getOwnPropertyDescriptors(x);

@@ -35,6 +35,8 @@ const db = new Database(join(parent, "synthetic-target.sqlite"));
 db.pragma("journal_mode = WAL"); db.pragma("synchronous = FULL");
 db.exec("CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, receipt TEXT NOT NULL)");
 let calls = 0, preparation = "fixture", policy = () => true, clock = new Date("2026-01-01T00:00:00Z"), release;
+let preparations = 0, denyPrepared = false;
+const policyInputs = [], preparationArguments = [];
 const wait = () => new Promise(r => { release = r; });
 const count = () => db.prepare("SELECT count(*) AS n FROM receipts").get().n;
 const schema = { type: "object", additionalProperties: false, properties: { text: { type: "string", minLength: 1, maxLength: 64 } }, required: ["text"] };
@@ -47,7 +49,10 @@ const commit = db.transaction(input => {
 const crash = () => { process.stdout.write(`ACTION_CRASH ${stage}\n`); process.kill(process.pid, "SIGKILL"); };
 const action = (revision = "1") => defineAction({ _id: "sample.record", _description: "Synthetic local receipt", _revision: revision, _input_schema: schema,
   _prepare_action: ({ _arguments, _context, _signal }) => {
+    preparations++; preparationArguments.push(_arguments);
     assert.ok(Object.isFrozen(_arguments)); assert.ok(Object.isFrozen(_context)); assert.ok(_signal instanceof AbortSignal);
+    if (scenario === "deny-prepared-confirm" && preparations > 1) denyPrepared = true;
+    if (scenario === "invalid-prepared-arguments") return { _arguments: { text: "x".repeat(65) }, _authorized_scope: {}, _confirmation_summary: "Synthetic invalid preparation" };
     if (scenario === "changed-preparation" && preparation !== "fixture") return { _arguments, _authorized_scope: { changed: true }, _confirmation_summary: preparation };
     return { _arguments, _authorized_scope: { target: "synthetic-local" }, _confirmation_summary: `Record ${_arguments.text}` };
   },
@@ -56,8 +61,9 @@ const action = (revision = "1") => defineAction({ _id: "sample.record", _descrip
     if (["timeout", "drain", "reconcile-busy"].includes(scenario)) await wait();
     if (scenario === "uncertain" || scenario === "seed" || scenario === "pagination") throw Error("SYNTHETIC_UNSAFE_EXCEPTION");
     if (scenario === "invalid-result") return { _status: "succeeded", _result: { bad: Infinity } };
-    if (scenario === "known-failure") return { _status: "failed", _failure_code: "E_SYNTHETIC_REFUSAL", _result: {} };
+    if (scenario === "known-failure" || scenario === "proposal-failed") return { _status: "failed", _failure_code: "E_SYNTHETIC_REFUSAL", _result: { detail: "synthetic-outcome" } };
     const receipt = commit(input);
+    if (scenario === "proposal-uncertain") throw Error("SYNTHETIC_UNSAFE_EXCEPTION");
     if (scenario === "crash" && stage === "effect") crash();
     return receipt._outcome;
   },
@@ -69,7 +75,7 @@ const action = (revision = "1") => defineAction({ _id: "sample.record", _descrip
 });
 const options = () => ({ _name: "actions-fixture", _instance_id: "fixture-instance", _application_scope: { _env: "test", _app_id: "synthetic-app" },
   _host: { _work_folder: folder, _listen: { _host: "127.0.0.1", _port: 0 } }, _actions: [action()],
-  _policy: i => policy(i), _limits: { _timeout_ms: scenario === "timeout" ? 80 : 3000, _max_json_bytes: 2048 }, _now: () => clock });
+  _policy: i => { policyInputs.push(i); return policy(i); }, _limits: { _timeout_ms: scenario === "timeout" ? 80 : 3000, _max_json_bytes: 2048 }, _now: () => clock });
 const error = code => e => { assert.ok(e instanceof DurableActionError); assert.equal(e._code, code); assert.equal(e.cause, undefined); return true; };
 const params = p => ({ _action_id: p._action_id, _binding_hash: p._binding_hash });
 const entity = { _app_id: "xpell-agent-starter", _env: "default", _entity: "agent_action" };
@@ -138,11 +144,45 @@ try {
       assert.deepEqual(diagnostic._result._diagnostic._sqlite_pragmas, { _journal_mode: "wal", _synchronous: 2, _foreign_keys: 1, _busy_timeout: 5000 });
       if (scenario === "deny") {
         await assert.rejects(proposal(), error("E_ADK_ACTION_DENIED")); assert.equal(calls, 0);
+      } else if (scenario === "argument-accessors" || scenario === "argument-proxies") {
+        let reads = 0;
+        const getter = () => { reads++; return reads === 1 ? "hello" : "x".repeat(100); };
+        const accessor = (key, enumerable = true) => Object.defineProperty(key === "text" ? {} : { text: "hello" }, key, { enumerable, get: getter });
+        const trap = () => { reads++; throw Error("SYNTHETIC_UNSAFE_EXCEPTION"); };
+        const proxy = value => new Proxy(value, { get: trap, getPrototypeOf: trap, ownKeys: trap, getOwnPropertyDescriptor: trap });
+        const revoked = Proxy.revocable({ text: "hello" }, {}); revoked.revoke();
+        const args = scenario === "argument-accessors" ? [accessor("text"), accessor("text", false), accessor("extra"), accessor("toJSON"),
+          Object.create(Object.defineProperty({}, "text", { get: getter })), { text: "hello", [Symbol("invalid")]: "x" }] :
+          [proxy({ text: "hello" }), revoked.proxy, { text: proxy({}) }, proxy([])];
+        for (const value of args) await assert.rejects(app.prepare({ _capability_id: "sample.record", _arguments: value }, request), error("E_ADK_ACTION_CONFIG"));
+        if (scenario === "argument-proxies") await assert.rejects(app.prepare(proxy({ _capability_id: "sample.record", _arguments: { text: "hello" } }), request), error("E_ADK_ACTION_CONFIG"));
+        assert.equal(reads, 0); assert.equal(policyInputs.length, 0); assert.equal(preparations, 0); assert.equal(calls, 0);
+      } else if (scenario === "argument-snapshot") {
+        const original = { text: "hello" }; let first;
+        policy = async i => {
+          if (!first) { first = i._arguments; original.text = "changed after admission"; await Promise.resolve(); }
+          assert.equal(i._arguments, first); assert.equal(i._arguments.text, "hello"); assert.ok(Object.isFrozen(i._arguments));
+          return true;
+        };
+        const p = await app.prepare({ _capability_id: "sample.record", _arguments: original }, request);
+        assert.equal(preparationArguments[0], first); assert.notEqual(first, original); assert.equal(preparations, 1); assert.equal(calls, 0);
+        assert.deepEqual(Object.keys(p).sort(), ["_action_id", "_binding_hash", "_capability_id", "_confirmation_summary", "_expires_at", "_revision"]);
+      } else if (["invalid-prepared-arguments", "deny-initial", "deny-prepared", "deny-prepared-throw"].includes(scenario)) {
+        if (scenario === "deny-initial") policy = () => false;
+        if (scenario === "deny-prepared") policy = i => i._authorized_scope === undefined;
+        if (scenario === "deny-prepared-throw") policy = i => { if (i._authorized_scope !== undefined) throw Error("SYNTHETIC_UNSAFE_EXCEPTION"); return true; };
+        await assert.rejects(proposal(), error(scenario === "invalid-prepared-arguments" ? "E_ADK_ACTION_CONFIG" : "E_ADK_ACTION_DENIED"));
+        assert.equal(calls, 0); assert.equal(preparations, scenario === "deny-initial" ? 0 : 1);
+        assert.equal(policyInputs.length, scenario.startsWith("deny-prepared") ? 2 : 1);
+        assert.ok(policyInputs.every(i => typeof i._arguments.text === "string" && i._arguments.text.length <= 64));
+        const rows = await _x.execute({ _module: "entity-manager", _op: "find", _params: { ...entity, _filter: {}, _limit: 10 } });
+        assert.equal(rows._ok, true); assert.equal(rows._result._records._data.length, 0);
       } else if (scenario === "validation") {
         for (const args of [{}, { text: 1 }, { text: "x", extra: "no" }, { text: "x".repeat(65) }, Object.defineProperty({}, "text", { enumerable: true, get() { throw Error("SYNTHETIC_UNSAFE_EXCEPTION"); } })]) {
           await assert.rejects(app.prepare({ _capability_id: "sample.record", _arguments: args }, request));
         }
-        await assert.rejects(app.prepare({ _capability_id: "missing", _arguments: { text: "x" } }, request), error("E_ADK_ACTION_UNAVAILABLE")); assert.equal(calls, 0);
+        await assert.rejects(app.prepare({ _capability_id: "missing", _arguments: { text: "x" } }, request), error("E_ADK_ACTION_UNAVAILABLE"));
+        assert.equal(calls, 0); assert.equal(policyInputs.length, 0); assert.equal(preparations, 0);
       } else if (["recover", "replay", "revision", "revision-pending", "missing-definition", "wrong-evidence", "restart-policy"].includes(scenario)) {
         const p = JSON.parse(await readFile(join(parent, "proposal.json"), "utf8"));
         if (scenario === "revision") {
@@ -184,8 +224,28 @@ try {
         } else {
           const proposals = await Promise.all(Array.from({ length: scenario === "concurrency" ? 8 : 1 }, proposal));
           const p = proposals[0]; assert.ok(proposals.every(x => x._action_id === p._action_id));
-          assert.equal(p._state, "pending"); assert.equal(calls, 0); assert.ok(Object.isFrozen(p));
-          if (scenario === "authority") {
+          assert.equal((await app.get(p._action_id, confirm))._state, "pending"); assert.equal(calls, 0); assert.ok(Object.isFrozen(p));
+          if (scenario.startsWith("proposal-")) {
+            const expected = scenario.slice("proposal-".length) === "uncertain" ? "executing" : scenario.slice("proposal-".length);
+            if (expected === "executing") await assert.rejects(app.confirm(params(p), confirm), error("E_ADK_ACTION_UNCERTAIN"));
+            else assert.equal((await app.confirm(params(p), confirm))._state, expected);
+            const stored = await app.get(p._action_id, confirm); assert.equal(stored._state, expected);
+            policy = i => i._phase === "prepare";
+            await assert.rejects(app.get(p._action_id, confirm), error("E_ADK_ACTION_DENIED"));
+            await assert.rejects(app.confirm(params(p), confirm), error("E_ADK_ACTION_DENIED"));
+            const offset = policyInputs.length, replay = await proposal();
+            assert.deepEqual(replay, p);
+            assert.deepEqual(Object.keys(replay).sort(), ["_action_id", "_binding_hash", "_capability_id", "_confirmation_summary", "_expires_at", "_revision"]);
+            for (const key of ["_state", "_uncertain", "_result", "_failure_code"]) assert.equal(Object.hasOwn(replay, key), false);
+            assert.ok(policyInputs.slice(offset).every(i => i._phase === "prepare"));
+            assert.equal(calls, 1); assert.equal(count(), expected === "failed" ? 0 : 1);
+            policy = () => true; assert.deepEqual(await app.get(p._action_id, confirm), stored);
+          } else if (scenario === "deny-prepared-confirm") {
+            policy = i => !(denyPrepared && i._phase === "confirm");
+            await assert.rejects(app.confirm(params(p), confirm), error("E_ADK_ACTION_DENIED"));
+            assert.equal(preparations, 2); assert.equal(calls, 0);
+            assert.equal((await app.get(p._action_id, confirm))._state, "pending");
+          } else if (scenario === "authority") {
             for (const c of [{ ...confirm }, ctx("c", "other-actor"), ctx("c", "actor", "other-conversation")]) {
               await assert.rejects(app.confirm(params(p), c), error("E_ADK_ACTION_DENIED"));
             }

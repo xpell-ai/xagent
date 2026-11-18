@@ -51,7 +51,12 @@ import { defineAction, createDurableActions } from "@xpell/agent/adk/actions";
 `defineAction` requires an ID, description, revision, closed input schema,
 `_prepare_action` and fixed `_handler`; `_read_committed_outcome` is optional.
 It reuses T1 schema validation/snapshotting and the Starter argument validator.
-Only bounded string fields are accepted by the current schema contract. IDs
+Before schema validation, the facade rejects proxies/accessors and snapshots
+arguments into owned immutable data without invoking getters. It validates that
+snapshot and passes the same validated object to the initial policy and preparer;
+later mutation of caller input cannot change it. Prepared argument output is
+also snapshotted/validated before the prepared-resource policy decision. Only
+bounded string fields are accepted by the current schema contract. IDs
 and schemas cannot select dynamic code, commands, providers or paths.
 
 `createDurableActions` requires `_name`, `_instance_id`, native
@@ -63,7 +68,7 @@ clock seam; callers and models must never control it.
 | --- | --- |
 | `start()` / `close()` | Explicit host/store lifecycle; close drains owned work and disposes providers without deleting data. |
 | `bindContext({_actor_id, _conversation_id, _delivery_id})` | Trusted composition only, after start. Produces an immutable profile-bound reference; serialized, cloned and foreign references fail. |
-| `prepare({_capability_id, _arguments}, context)` | Validate input, authorize, prepare the exact arguments/scope/summary, authorize that prepared scope and persist a pending proposal. Runs no effect. |
+| `prepare({_capability_id, _arguments}, context)` | Snapshot/validate input, authorize, prepare the exact arguments/scope/summary, authorize that prepared scope and persist a pending proposal. Returns only `ActionProposal`, including on replay. Runs no effect. |
 | `confirm({_action_id, _binding_hash}, context)` | Require the same actor/conversation, exact reviewed hash and a distinct delivery from the original request. Authorize current policy, re-prepare/recheck, confirm and conditionally claim execution. |
 | `cancel({_action_id, _binding_hash}, context)` | Authorize the same bound caller and conditionally cancel only pending work. Cancelled replay is safe. |
 | `get(id, context)` | Verify scope/binding and authorize inspection, including terminal or uncertain records. |
@@ -75,6 +80,16 @@ delivery ID and proposal hash bind that consent; they do not prove identity or
 human presence. `bindContext` is not an authentication or authorization service.
 Do not expose it, policy callbacks or the profile object to model output or an
 untrusted transport. There is no new public HTTP endpoint.
+
+`ActionProposal` contains exactly `_action_id`, `_capability_id`, `_revision`,
+`_binding_hash`, `_confirmation_summary` and `_expires_at`. It exposes no stored
+state, uncertainty, result or failure code. Prepare replay retains the same
+proposal identity/binding/expiry without granting access to previous outcomes,
+including when inspect/confirm permission has been revoked. Use authorized
+`get` for `ActionView` status/outcome inspection. Existing confirm/cancel return
+contracts and their policy checks are unchanged. Prepared-resource policy denial
+preserves safe `E_ADK_ACTION_DENIED`, including on confirmation re-preparation;
+it is not reported as an invalid result. Raw policy errors remain private.
 
 Policy phases are `prepare`, `confirm`, `execute`, `cancel`, `inspect` and
 `reconcile`. Every decision must return exactly `true` to permit it. Exceptions
@@ -215,6 +230,10 @@ execution-policy boundary, target commit and terminal commit. Restart/replay
 assert no repeated effect; target evidence can repair only the audit outcome.
 Other cases cover races, policy/revision/expiry changes, unsafe input/output,
 denial, mismatched receipts, scope/pagination, marker refusal and cleanup.
+Adversarial regressions also cover terminal/uncertain prepare replay under
+prepare-only policy, accessor/proxy rejection before callbacks, immutable
+snapshot identity under caller mutation, invalid prepared output and safe
+initial/prepared-resource denial classification.
 
 ## Extraction provenance
 

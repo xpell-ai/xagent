@@ -10,6 +10,10 @@ interfaces remain unchanged. See [the API and offline runbook](docs/durable-acti
 and `examples/durable-actions.mjs`. No model loop, IAM service, migration or
 release is included. This subpath is unpublished.
 
+Prepare/replay returns proposal metadata only; status and retained outcomes need
+authorized inspection. Arguments are snapshotted and validated before callbacks,
+and prepared-resource policy refusal retains the safe denial code.
+
 ## Read-tool registry review candidate
 
 The separate opt-in `@xpell/agent/adk/tools` subpath adds typed read definitions,

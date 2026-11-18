@@ -23,7 +23,9 @@ function run(scenario, parent, stage = "") {
 }
 for (const scenario of ["lifecycle", "deny", "authority", "validation", "changed-preparation", "expiry", "execute-denial",
   "execute-expiry", "concurrency", "cancel-race", "uncertain", "invalid-result", "timeout", "reconcile-busy", "pagination",
-  "completion-failure", "reconcile-race", "known-failure", "tamper", "profile", "symlink", "failed-start", "partial-start", "foreign-host", "drain", "config"]) {
+  "completion-failure", "reconcile-race", "known-failure", "tamper", "profile", "symlink", "failed-start", "partial-start", "foreign-host", "drain", "config",
+  "proposal-succeeded", "proposal-failed", "proposal-uncertain", "argument-accessors", "argument-proxies", "argument-snapshot",
+  "invalid-prepared-arguments", "deny-initial", "deny-prepared", "deny-prepared-throw", "deny-prepared-confirm"]) {
   test(`Durable Actions: ${scenario}`, async () => {
     const parent = await mkdtemp(join(tmpdir(), "xagent-actions-test-"));
     try { run(scenario, parent); } finally { await rm(parent, { recursive: true, force: true }); }
