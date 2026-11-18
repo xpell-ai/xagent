@@ -1,0 +1,30 @@
+{
+  "name": "xagent-reference-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x || 24.x" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/reference.test.mjs",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@xpell/agent": "file:artifacts/xpell-agent-2.0.8.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
+  },
+  "allowScripts": { "better-sqlite3@12.11.1": true },
+  "xpellReferenceArtifact": {
+    "repository": "https://github.com/xpell-ai/xagent",
+    "sourceCommit": "c9d398f755e2aeee7eb7dff0a05ca311cfef6d40",
+    "mergedCommit": "f6437b4a29ef9f74c000606960b5c4456a33fa38",
+    "sourceTree": "85efdf58d06fd162210f47165368feecd75bef24",
+    "sha256": "0b2d54d2184caaff717c58d900981f4e5ab084d7aab74dc6bddb72aad6cf8011",
+    "requiredNodePeer": "2.0.8",
+    "status": "source-built-unpublished"
+  }
+}

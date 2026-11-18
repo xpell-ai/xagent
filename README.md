@@ -1,5 +1,58 @@
 # @xpell/agent
 
+## Neutral reference consumer (source artifact only)
+
+`examples/reference-agent/` is a six-authored-file ESM/TypeScript consumer of
+the existing public ADK APIs. Its definition selects a mock model and an owned
+mock Channel; the installed package supplies the runtime. The entrypoint makes
+one synthetic turn using a fresh disposable directory and an ephemeral loopback
+listener, closes the Agent, and removes only that directory. It loads no `.env`
+and needs no credential. Node 22 and 24 are the qualification targets.
+
+This is a review sample, not a published-npm quickstart. Published
+`@xpell/agent@2.0.8` lacks ADK exports. The sample intentionally depends on
+`file:artifacts/xpell-agent-2.0.8.tgz`; that **unpublished source-built artifact is
+not committed or downloaded automatically**. Obtain the reviewed artifact through
+an approved channel. Its SHA-256 must be
+`0b2d54d2184caaff717c58d900981f4e5ab084d7aab74dc6bddb72aad6cf8011`.
+It was built from `c9d398f755e2aeee7eb7dff0a05ca311cfef6d40`, whose tree
+`85efdf58d06fd162210f47165368feecd75bef24` matches merged commit
+`f6437b4a29ef9f74c000606960b5c4456a33fa38`. The manifest records this pin;
+the lock pins the local archive integrity and all registry dependencies.
+
+Place that exact archive at
+`examples/reference-agent/artifacts/xpell-agent-2.0.8.tgz`. Verify its checksum
+before installation, then from `examples/reference-agent/`:
+
+```sh
+shasum -a 256 artifacts/xpell-agent-2.0.8.tgz
+npm ci --no-audit --no-fund
+npm run build
+npm run typecheck
+npm test
+npm start
+```
+
+Clean offline reproduction uses `npm ci --offline` with a separately prepared
+dependency cache and matching native SQLite build prerequisites/Node headers.
+Initial registry/cache preparation requires network access. It is not a model
+call. Native dependencies must be installed separately for each Node ABI; do not
+reuse or rebuild an active application's `node_modules`. The npm 11 script
+allowlist permits only the locked `better-sqlite3@12.11.1` native install.
+
+The dependency direction is this sample → `@xpell/agent` → required
+`@xpell/node@2.0.8` peer → Core/host/storage dependencies. TypeScript and Node types
+are development dependencies. Router providers, Channels and browser UI are not
+installed by this sample. Tests check public T1–T4 export availability, the mock
+lifecycle, denied optional Read/plugin composition, and entrypoint exit; they do
+not qualify live Router/provider behavior or durable Action execution. A trusted
+context is not authentication, and plugin registration is not a permission grant.
+The default Foundation still accepts only `_plugins: []`; the optional registry
+fixture is composed independently. No Host Facade, duplicated host/storage/tool
+engine, product logic, migration or deployment is included. Artifact/lock updates
+require review; this dependency must not be replaced with registry 2.0.8 until a
+separately approved release actually contains the required exports.
+
 ## Optional Agent Plugins review candidate
 
 The additive `@xpell/agent/adk/plugins` subpath provides explicit typed plugin
