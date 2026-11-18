@@ -1,5 +1,15 @@
 # @xpell/agent
 
+## Read-tool registry review candidate
+
+The separate opt-in `@xpell/agent/adk/tools` subpath adds typed read definitions,
+registry-bound trusted contexts, deny-by-default policy, bounded cooperative
+execution and process-local replay receipts. It starts no host/model/storage.
+See [read tools](docs/read-tools.md) and the neutral
+`examples/read-tools.mjs` example. Existing Foundation, durable and text Router
+interfaces remain unchanged; no model tool loop, durable Actions, IAM, plugin
+loading or release is included. This subpath is an unpublished review candidate.
+
 ## Router chat review candidate
 
 The opt-in `createRouterAgent` / `routerTextModel` facade sends bounded durable

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — typed read-tool registry
+
+- Add opt-in `adk/tools` with immutable closed-string schemas, typed fixed read handlers and registry-bound caller contexts.
+- Default-deny exposure/invocation policy, scoped reauthorization, cooperative deadlines, JSON byte bounds and safe error codes.
+- Add bounded process-local invocation receipts/replay, neutral sample.echo and offline contract/type tests.
+- Preserve existing factories, Router tool rejection and persistence assets; no model loop, durable Actions, IAM, plugins, version bump or publication.
+
 ## Unreleased — bounded Router chat integration
 
 - Add explicit Router model configuration and local `createRouterAgent.chat` using XNode XAI/AimeProvider, existing persistence lifecycle and bounded context.
