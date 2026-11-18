@@ -1,5 +1,15 @@
 # @xpell/agent
 
+## Optional Agent Plugins review candidate
+
+The additive `@xpell/agent/adk/plugins` subpath provides explicit typed plugin
+registration, exact compatibility declarations, host/agent grants, lifecycle
+cleanup and policy-decorated T1/T2 contributions. It installs/loads no code and
+starts no host/model. Trusted in-process plugins are not a sandbox or IAM.
+See [the API and offline runbook](docs/agent-plugins.md) and the neutral
+`examples/agent-plugins.mjs` two-plugin example. Existing APIs and Action consent
+remain unchanged. OAuth is design-only; no release or live integration is included.
+
 ## Durable Actions review candidate
 
 The separate opt-in `@xpell/agent/adk/actions` subpath adds an explicit trusted

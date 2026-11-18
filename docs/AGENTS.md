@@ -116,6 +116,14 @@ Preserve all previous factories, public interfaces, schemas and text-only Router
 rejection. No second host, auto-resume, retries, IAM, plugin loader or product
 imports; retain offline crash/restart and cancellation qualification.
 
+The separately approved T4 `adk/plugins` subpath is trusted opt-in application
+composition: explicit static definitions, exact peer/plugin requirements, declared
+host/agent grants, T1/T2 policy decorators and terminal lifecycle cleanup. Keep
+model discovery separate from authority and preserve T2 confirmation. No dynamic
+loader/installer, XVM pack migration, provider dependency, full IAM or sandbox
+claim. Drain owned work before reverse cleanup; use neutral examples only.
+Existing factories and DTOs remain unchanged.
+
 ## XAgent Contract
 
 `XAgent` must remain the only XModule in this package. Its `_name` is both the
