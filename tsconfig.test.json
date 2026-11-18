@@ -17,6 +17,7 @@
     "tests/consumer.ts",
     "tests/adk-consumer.ts",
     "tests/router-consumer.ts",
-    "tests/tools-consumer.ts"
+    "tests/tools-consumer.ts",
+    "tests/actions-consumer.ts"
   ]
 }
