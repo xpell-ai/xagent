@@ -23,7 +23,9 @@
     "docs/durable-actions.md",
     "examples/durable-actions.mjs",
     "docs/model-tool-loop.md",
-    "examples/model-tool-loop.mjs"
+    "examples/model-tool-loop.mjs",
+    "docs/agent-plugins.md",
+    "examples/agent-plugins.mjs"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -50,6 +52,10 @@
     "./adk/tool-loop": {
       "types": "./dist/adk/tool-loop.d.ts",
       "import": "./dist/adk/tool-loop.js"
+    },
+    "./adk/plugins": {
+      "types": "./dist/adk/plugins.d.ts",
+      "import": "./dist/adk/plugins.js"
     }
   },
   "sideEffects": false,
