@@ -15,6 +15,7 @@ import { ActionService, actionBindingHash, StarterActionError, STARTER_ACTION_ER
 import type { AgentActionRecord, AgentActionState } from "./starter/actions/types.js";
 import { validateCapabilityArguments, type AgentCapability, type AgentSideEffectOutcome } from "./starter/capabilities/AgentCapability.js";
 import { DurableActionError, fail, data, text, integer, hash, frozen, jsonObject, safeFailure } from "./actions/validation.js";
+import { registerActionHost } from "./actions/host.js";
 export { DurableActionError } from "./actions/validation.js";
 
 export type ActionContextInput = Readonly<{ _actor_id: string; _conversation_id: string; _delivery_id: string }>;
@@ -304,6 +305,9 @@ function composeDurableActions<const T extends readonly AnyAction[]>(options: Du
       });
     },
   };
+  registerActionHost(api, Object.freeze({ _name: name, _instance_id: instance, _application_scope: scope,
+    _definitions: Object.freeze([...definitions.values()].map(d => Object.freeze({ _id: d._id, _description: d._description, _revision: d._revision, _input_schema: d._input_schema }))),
+    check() { check(); if (base.getStatus()._state !== "ready") return fail("E_ADK_ACTION_NOT_READY"); } }));
   return Object.freeze(api) as DurableActions<T>;
 }
 

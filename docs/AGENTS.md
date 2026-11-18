@@ -108,6 +108,14 @@ Keep source provenance, durability limits and offline crash/restart evidence
 alongside the code. This remains application composition outside the root
 Agent/Channel DTOs; XNode stays generic.
 
+The separately approved T3 `adk/tool-loop` is an opt-in local orchestration
+utility on the existing T2 host. Keep bounded native XAI messages, T1 read
+execution/replay authorization, durable turn claims and prepare-only Action
+proposals separate from model authority. Consent/confirm stays application-owned.
+Preserve all previous factories, public interfaces, schemas and text-only Router
+rejection. No second host, auto-resume, retries, IAM, plugin loader or product
+imports; retain offline crash/restart and cancellation qualification.
+
 ## XAgent Contract
 
 `XAgent` must remain the only XModule in this package. Its `_name` is both the

@@ -48,3 +48,10 @@ Compatibility: internal workspace specifications are retained. No public API red
 
 Validation: package builds and available tests are recorded in the coordinated Gate 2 report. Gate 3 must verify the exact packed artifacts and clean-consumer compatibility before publication. These entries describe verified checked-out capabilities and release-preparation deltas; they do not claim that every capability is new relative to the last npm artifact.
 
+
+### Unreleased — opt-in bounded model tool loop
+
+- Add `adk/tool-loop` local composition with bounded native XAI rounds, T1 read
+  policy/replay checks, T2 prepare-only proposals and conservative SQLite turn claims.
+- Preserve existing factories/interfaces and protected assets; add offline
+  fixture sample, typed consumer and crash/restart/cancellation regressions.

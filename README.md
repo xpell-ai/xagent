@@ -486,3 +486,12 @@ processes. Outbound network/provider calls are blocked. No real data is used.
 ## License
 
 MIT
+
+## Opt-in bounded model tool loop
+
+`@xpell/agent/adk/tool-loop` composes a real T1 read registry and one existing T2
+host with native XAI tool messages. Action calls prepare proposals and stop for
+application-mediated confirmation. Existing text-only Router chat stays unchanged.
+See [API, boundaries and offline runbook](docs/model-tool-loop.md) and the
+[neutral fixture sample](examples/model-tool-loop.mjs). No live calls or automatic
+retry/resume are enabled by installation.

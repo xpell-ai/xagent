@@ -1,3 +1,4 @@
+import { registerReadRegistry } from "./tools/host.js";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { XAIToolDefinition } from "@xpell/node";
@@ -239,6 +240,20 @@ export function createToolRegistry<const T extends readonly AnyTool[]>(options: 
     if (!/^[A-Za-z0-9._-]+$/.test(revision)) return fail("E_ADK_TOOL_DENIED");
     return revision;
   }
+  function validatedCall(call: unknown, ctx: TrustedToolContext) {
+      const ref = trusted(ctx), q = exact(call, ["_id", "_name", "_arguments"], "E_ADK_TOOL_ARGUMENTS");
+      const id = text(q._id, 200, "E_ADK_TOOL_ARGUMENTS"), name = text(q._name, 100, "E_ADK_TOOL_UNKNOWN"), tool = tools.get(name);
+      if (!tool) return fail("E_ADK_TOOL_UNKNOWN");
+      if (!ref.exposed.has(name)) return fail("E_ADK_TOOL_DENIED");
+      const args = object(q._arguments, "E_ADK_TOOL_ARGUMENTS"), s = tool._input_schema;
+      if (Object.keys(args).some(k => !Object.hasOwn(s.properties, k)) || s.required.some(k => !Object.hasOwn(args, k))) return fail("E_ADK_TOOL_ARGUMENTS");
+      for (const [k, value] of Object.entries(args)) {
+        const p = s.properties[k];
+        if (typeof value !== "string" || value.length < p.minLength || value.length > p.maxLength) return fail("E_ADK_TOOL_ARGUMENTS");
+      }
+      const serialized = json(args, inputBytes, "E_ADK_TOOL_LIMIT"), argumentsValue = Object.freeze(JSON.parse(serialized)) as Readonly<Record<string, string>>;
+      return { ref, id, name, tool, serialized, argumentsValue };
+  }
   const api = {
     bindContext(input: ToolContextData): TrustedToolContext {
       ready(); const data = contextData(input), key = hash(json(data, 4096, "E_ADK_TOOL_DENIED"));
@@ -258,17 +273,7 @@ export function createToolRegistry<const T extends readonly AnyTool[]>(options: 
       });
     },
     async invoke(call: unknown, ctx: TrustedToolContext): Promise<ToolJsonObject> {
-      const ref = trusted(ctx), q = exact(call, ["_id", "_name", "_arguments"], "E_ADK_TOOL_ARGUMENTS");
-      const id = text(q._id, 200, "E_ADK_TOOL_ARGUMENTS"), name = text(q._name, 100, "E_ADK_TOOL_UNKNOWN"), tool = tools.get(name);
-      if (!tool) return fail("E_ADK_TOOL_UNKNOWN");
-      if (!ref.exposed.has(name)) return fail("E_ADK_TOOL_DENIED");
-      const args = object(q._arguments, "E_ADK_TOOL_ARGUMENTS"), s = tool._input_schema;
-      if (Object.keys(args).some(k => !Object.hasOwn(s.properties, k)) || s.required.some(k => !Object.hasOwn(args, k))) return fail("E_ADK_TOOL_ARGUMENTS");
-      for (const [k, value] of Object.entries(args)) {
-        const p = s.properties[k];
-        if (typeof value !== "string" || value.length < p.minLength || value.length > p.maxLength) return fail("E_ADK_TOOL_ARGUMENTS");
-      }
-      const serialized = json(args, inputBytes, "E_ADK_TOOL_LIMIT"), argumentsValue = Object.freeze(JSON.parse(serialized)) as Readonly<Record<string, string>>;
+      const { ref, id, name, tool, serialized, argumentsValue } = validatedCall(call, ctx);
       const key = hash(JSON.stringify([ref.key, id])), binding = hash(JSON.stringify([name, serialized]));
       const old = entries.get(key);
       if (old && old.binding !== binding) return fail("E_ADK_TOOL_CONFLICT");
@@ -303,5 +308,9 @@ export function createToolRegistry<const T extends readonly AnyTool[]>(options: 
       contexts.clear(); references = new WeakMap(); for (const e of entries.values()) e.result = undefined;
     },
   };
+  registerReadRegistry(api, Object.freeze({ async reauthorize(call: unknown, ctx: TrustedToolContext) {
+    const { tool, argumentsValue } = validatedCall(call, ctx);
+    await bounded(async op => { if (!await authorize("invoke", tool, ctx, op, argumentsValue)) fail("E_ADK_TOOL_DENIED"); });
+  } }));
   return Object.freeze(api) as ToolRegistry<T>;
 }

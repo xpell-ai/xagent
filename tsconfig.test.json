@@ -18,6 +18,7 @@
     "tests/adk-consumer.ts",
     "tests/router-consumer.ts",
     "tests/tools-consumer.ts",
-    "tests/actions-consumer.ts"
+    "tests/actions-consumer.ts",
+    "tests/tool-loop-consumer.ts"
   ]
 }
