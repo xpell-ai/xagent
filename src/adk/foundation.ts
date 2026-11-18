@@ -39,6 +39,8 @@ export type AgentFoundation = Readonly<{
 
 /** Internal composition port; not exported by the public ADK entry. */
 export type FoundationAdapter = {
+  /** Internal opt-in for profiles requiring XNode's existing WAL/FULL policy. */
+  _entity_sqlite?: Readonly<{ _require_full_durability: true }>;
   _lifecycle: XAgentMessageLifecycle;
   prepareFolder(folder: string): Promise<void>;
   _system_xapps_path: string;
@@ -238,7 +240,8 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
         node = new XNode();
         await node.start({ _work_folder: folder, _host: address, _port: port,
           _web_settings: { "enable-wormhole": false, "enable-ssl": false },
-          _modules: [agent], ...(adapter ? { _system_xapps_path: adapter._system_xapps_path } : {}) });
+          _modules: [agent], ...(adapter ? { _system_xapps_path: adapter._system_xapps_path,
+            ...(adapter._entity_sqlite ? { _entity_sqlite: adapter._entity_sqlite } : {}) } : {}) });
         assertStarting();
         await adapter?.afterStart();
         assertStarting();

@@ -97,6 +97,17 @@ durable Actions, IAM, plugin loading or product imports. Existing factories and
 Router result rejection remain unchanged. Document that callbacks are trusted
 code, context binding is not authentication and receipts are process-local.
 
+The separately approved T2 `adk/actions` composition is a distinct opt-in
+SQLite profile with five unchanged generic protected entity schemas and its own
+marker. Reuse audited Starter Action binding, authority, expiry and conditional
+claims. Keep policy context server-owned, confirmation explicit, execution
+reauthorized and uncertain effects non-replayable. Reconciliation only reads
+fixed registered target evidence; no model loop, IAM, plugin loading, product
+code or old-store adoption. Preserve existing profile assets and public APIs.
+Keep source provenance, durability limits and offline crash/restart evidence
+alongside the code. This remains application composition outside the root
+Agent/Channel DTOs; XNode stays generic.
+
 ## XAgent Contract
 
 `XAgent` must remain the only XModule in this package. Its `_name` is both the

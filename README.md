@@ -1,5 +1,15 @@
 # @xpell/agent
 
+## Durable Actions review candidate
+
+The separate opt-in `@xpell/agent/adk/actions` subpath adds an explicit trusted
+prepare/confirm/cancel lifecycle, SQLite conditional execution claims and
+receipt-only reconciliation. It uses a fresh Action profile, WAL/FULL and a
+distinct marker. Existing Foundation, Conversations, Router and read-tool
+interfaces remain unchanged. See [the API and offline runbook](docs/durable-actions.md)
+and `examples/durable-actions.mjs`. No model loop, IAM service, migration or
+release is included. This subpath is unpublished.
+
 ## Read-tool registry review candidate
 
 The separate opt-in `@xpell/agent/adk/tools` subpath adds typed read definitions,

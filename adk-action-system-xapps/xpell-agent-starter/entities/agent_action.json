@@ -1,0 +1,131 @@
+{
+  "_id": "agent_action",
+  "_title": "Agent Action",
+  "_description": "Durable authorization, confirmation, execution, and safe outcome record for one prepared Agent side effect.",
+  "_meta": {
+    "_version": 2
+  },
+  "_storage": {
+    "_provider": "sqlite",
+    "_scope": "app"
+  },
+  "_schema": {
+    "_application_scope_key": {
+      "_type": "String",
+      "_index": true,
+      "_immutable": true
+    },
+    "_capability_id": {
+      "_type": "String",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_capability_revision": {
+      "_type": "String",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_state": {
+      "_type": "String",
+      "_required": true,
+      "_enum": ["pending", "confirmed", "executing", "succeeded", "failed", "cancelled", "expired"],
+      "_index": true
+    },
+    "_arguments": {
+      "_type": "Object",
+      "_required": true,
+      "_immutable": true
+    },
+    "_authorized_scope": {
+      "_type": "Object",
+      "_required": true,
+      "_immutable": true
+    },
+    "_confirmation_summary": {
+      "_type": "String",
+      "_required": true,
+      "_immutable": true
+    },
+    "_binding_hash": {
+      "_type": "String",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_requester_participant_id": {
+      "_type": "ObjectId",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_conversation_id": {
+      "_type": "ObjectId",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_request_message_id": {
+      "_type": "ObjectId",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_expires_at": {
+      "_type": "Date",
+      "_required": true,
+      "_index": true,
+      "_immutable": true
+    },
+    "_confirmed_by_participant_id": {
+      "_type": "ObjectId",
+      "_index": true
+    },
+    "_confirmation_message_id": {
+      "_type": "ObjectId",
+      "_index": true
+    },
+    "_confirmed_at": {
+      "_type": "Date",
+      "_index": true
+    },
+    "_execution_started_at": {
+      "_type": "Date",
+      "_index": true
+    },
+    "_completed_at": {
+      "_type": "Date",
+      "_index": true
+    },
+    "_result": {
+      "_type": "Object"
+    },
+    "_failure_code": {
+      "_type": "String",
+      "_index": true
+    },
+    "_cancelled_by_participant_id": {
+      "_type": "ObjectId",
+      "_index": true
+    },
+    "_id": {
+      "_type": "ObjectId",
+      "_required": false,
+      "_index": {
+        "_unique": true,
+        "_primary": true
+      },
+      "_immutable": true
+    },
+    "_created_at": {
+      "_type": "Date",
+      "_required": false,
+      "_immutable": true
+    },
+    "_updated_at": {
+      "_type": "Date",
+      "_required": false
+    }
+  }
+}

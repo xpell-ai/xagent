@@ -18,7 +18,10 @@
     "examples/offline-router.mjs",
     "docs/router-chat-runbook.md",
     "docs/read-tools.md",
-    "examples/read-tools.mjs"
+    "examples/read-tools.mjs",
+    "adk-action-system-xapps",
+    "docs/durable-actions.md",
+    "examples/durable-actions.mjs"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -37,7 +40,11 @@
       "types": "./dist/adk/tools.d.ts",
       "import": "./dist/adk/tools.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./adk/actions": {
+      "types": "./dist/adk/actions.d.ts",
+      "import": "./dist/adk/actions.js"
+    }
   },
   "sideEffects": false,
   "scripts": {

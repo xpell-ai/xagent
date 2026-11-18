@@ -1,0 +1,74 @@
+{
+  "_id": "conversation",
+  "_title": "Conversation",
+  "_description": "One transport-neutral conversational space from a Channel or native Xpell source.",
+  "_meta": {
+    "_version": 3
+  },
+  "_storage": {
+    "_provider": "sqlite",
+    "_scope": "app"
+  },
+  "_schema": {
+    "_application_scope_key": {
+      "_type": "String",
+      "_index": true,
+      "_immutable": true
+    },
+    "_conversation_key": {
+      "_type": "String",
+      "_required": true,
+      "_index": {
+        "_unique": true
+      }
+    },
+    "_source_type": {
+      "_type": "String",
+      "_required": true,
+      "_enum": ["channel", "xpell"],
+      "_index": true
+    },
+    "_source_id": {
+      "_type": "String",
+      "_required": true,
+      "_index": true
+    },
+    "_source_conversation_id": {
+      "_type": "String",
+      "_required": true,
+      "_index": true
+    },
+    "_participant_ids": {
+      "_type": "Array",
+      "_required": true
+    },
+    "_started_at": {
+      "_type": "Date",
+      "_required": true,
+      "_index": true
+    },
+    "_last_activity_at": {
+      "_type": "Date",
+      "_required": true,
+      "_index": true
+    },
+    "_id": {
+      "_type": "ObjectId",
+      "_required": false,
+      "_index": {
+        "_unique": true,
+        "_primary": true
+      },
+      "_immutable": true
+    },
+    "_created_at": {
+      "_type": "Date",
+      "_required": false,
+      "_immutable": true
+    },
+    "_updated_at": {
+      "_type": "Date",
+      "_required": false
+    }
+  }
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — durable Actions T2
+
+- Add opt-in `adk/actions` with typed fixed definitions, trusted actor/application/conversation context and deny-by-default policy.
+- Reuse reviewed generic Starter proposal binding, 15-minute expiry, confirmation/cancellation and conditional SQLite execution claims in a separate five-entity Action profile.
+- Reauthorize confirmation and execution, require exact proposal hash and distinct confirmation delivery, and retain uncertain claims without automatic retry.
+- Add bounded actor/conversation reconciliation through registered committed-evidence readers, WAL/FULL verification, neutral synthetic receipts and offline crash/restart/concurrency tests.
+- Preserve existing interfaces and four-entity profile assets/marker. No model tool loop, IAM, plugins, product imports, migration, version bump or publication.
+
 ## Unreleased — typed read-tool registry
 
 - Add opt-in `adk/tools` with immutable closed-string schemas, typed fixed read handlers and registry-bound caller contexts.

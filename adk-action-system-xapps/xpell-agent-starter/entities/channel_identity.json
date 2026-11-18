@@ -1,0 +1,64 @@
+{
+  "_id": "channel_identity",
+  "_title": "Channel Identity",
+  "_description": "Maps one external provider identity on one configured Channel to one Participant.",
+  "_meta": {
+    "_version": 3
+  },
+  "_storage": {
+    "_provider": "sqlite",
+    "_scope": "app"
+  },
+  "_schema": {
+    "_application_scope_key": {
+      "_type": "String",
+      "_index": true,
+      "_immutable": true
+    },
+    "_identity_key": {
+      "_type": "String",
+      "_required": true,
+      "_index": {
+        "_unique": true
+      }
+    },
+    "_channel_id": {
+      "_type": "String",
+      "_required": true,
+      "_index": true
+    },
+    "_external_user_id": {
+      "_type": "String",
+      "_required": true,
+      "_index": true
+    },
+    "_participant_id": {
+      "_type": "ObjectId",
+      "_required": true,
+      "_index": true
+    },
+    "_last_seen_at": {
+      "_type": "Date",
+      "_required": true,
+      "_index": true
+    },
+    "_id": {
+      "_type": "ObjectId",
+      "_required": false,
+      "_index": {
+        "_unique": true,
+        "_primary": true
+      },
+      "_immutable": true
+    },
+    "_created_at": {
+      "_type": "Date",
+      "_required": false,
+      "_immutable": true
+    },
+    "_updated_at": {
+      "_type": "Date",
+      "_required": false
+    }
+  }
+}
