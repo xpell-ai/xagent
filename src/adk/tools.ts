@@ -308,7 +308,7 @@ export function createToolRegistry<const T extends readonly AnyTool[]>(options: 
       contexts.clear(); references = new WeakMap(); for (const e of entries.values()) e.result = undefined;
     },
   };
-  registerReadRegistry(api, Object.freeze({ async reauthorize(call: unknown, ctx: TrustedToolContext) {
+  registerReadRegistry(api, Object.freeze({ _tool_ids: Object.freeze([...tools.keys()]), async reauthorize(call: unknown, ctx: TrustedToolContext) {
     const { tool, argumentsValue } = validatedCall(call, ctx);
     await bounded(async op => { if (!await authorize("invoke", tool, ctx, op, argumentsValue)) fail("E_ADK_TOOL_DENIED"); });
   } }));

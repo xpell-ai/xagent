@@ -1,6 +1,7 @@
 import type { TrustedToolContext } from "../tools.js";
 /** Private T1 composition seam: current invoke policy, no handler or receipt mutation. */
 export type ReadRegistryHost = Readonly<{
+  readonly _tool_ids: readonly string[];
   reauthorize(call: unknown, context: TrustedToolContext): Promise<void>;
 }>;
 const hosts = new WeakMap<object, ReadRegistryHost>();

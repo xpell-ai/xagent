@@ -82,9 +82,17 @@ function argumentsFor(args: Record<string, unknown>, schema: ToolInputSchema): v
     if (typeof v !== "string" || v.length < p.minLength || v.length > p.maxLength) fail("E_ADK_LOOP_RESULT");
   }
 }
-type PreparedCall = { call: XAIToolCall; action: boolean };
+type DispatchEntry = Readonly<{ _kind: "read"; _tool: Readonly<XAIToolDefinition> }> |
+  Readonly<{ _kind: "action"; _tool: Readonly<XAIToolDefinition> }>;
+type DispatchCatalog = readonly DispatchEntry[];
+type CatalogStamp = Readonly<{ _name: string; _kind: DispatchEntry["_kind"] }>;
+type PreparedCall = { call: XAIToolCall; entry: DispatchEntry };
+function dispatchCatalog(entries: DispatchEntry[]): DispatchCatalog {
+  if (entries.length > 32 || new Set(entries.map(e => e._tool._name)).size !== entries.length) return fail("E_ADK_LOOP_CONFIG");
+  return frozen(entries);
+}
 type PendingAction = { _name: string; _arguments: Record<string, string>; _delivery_id: string };
-type Receipt = { _format: "adk-tool-loop/1"; _binding: string; _result: ToolLoopResult; _actions: PendingAction[]; _reads: { _id: string; _name: string; _arguments: Record<string, unknown> }[] };
+type Receipt = { _format: "adk-tool-loop/1" | "adk-tool-loop/2"; _catalog?: readonly CatalogStamp[]; _binding: string; _result: ToolLoopResult; _actions: PendingAction[]; _reads: { _id: string; _name: string; _arguments: Record<string, unknown> }[] };
 const CHANNEL = "adk-model-tool-loop";
 
 /** Opt-in local orchestration, not another Agent/XNode runtime or public ingress. */
@@ -104,6 +112,8 @@ export function createRouterToolLoop<const R extends Reads, const H extends Dura
   const ids = snapshot({ ids: v._action_ids }, 4096, "E_ADK_LOOP_CONFIG").ids;
   if (!Array.isArray(ids) || ids.length > 16 || new Set(ids).size !== ids.length) return fail("E_ADK_LOOP_CONFIG");
   const definitions = ids.map(id => { const d = host._definitions.find(x => x._id === id); if (!d) return fail("E_ADK_LOOP_CONFIG"); return d; });
+  // Namespace ambiguity is a configuration error even if either policy hides it.
+  if (definitions.some(d => readHost._tool_ids.includes(d._id))) return fail("E_ADK_LOOP_CONFIG");
   const system = string(v._system, 4096), policy = v._policy as ToolLoopPolicy | undefined;
   const reads = options._reads, actions = options._actions;
   const connection = new RouterModel(model, { _name: host._name, _conversations: host });
@@ -154,6 +164,18 @@ export function createRouterToolLoop<const R extends Reads, const H extends Dura
         catch { check(); return fail("E_ADK_LOOP_DENIED"); }
         check(); return allow;
       };
+      const projectCatalog = async (provenance?: readonly CatalogStamp[]): Promise<DispatchCatalog> => {
+        const projected = await reads.project(ref.read); check();
+        const entries: DispatchEntry[] = projected.map(tool => ({ _kind: "read", _tool: tool }));
+        for (const d of definitions) {
+          // Replay uses recorded authorized exposure, then current T2 prepare policy.
+          // Discovery alone remains distinct from application replay authorization.
+          const exposed = provenance ? provenance.some(e => e._name === d._id && e._kind === "action") : await authorize("expose-action", d._id);
+          if (exposed) entries.push({ _kind: "action", _tool: { _name: d._id,
+            _description: `Prepare only; application confirmation required. ${d._description}`, _input_schema: d._input_schema } });
+        }
+        check(); return dispatchCatalog(entries);
+      };
       const actual = Promise.resolve().then(async (): Promise<ToolLoopResult> => {
         let turn: InboundConversationTurn | undefined;
         try {
@@ -171,19 +193,38 @@ export function createRouterToolLoop<const R extends Reads, const H extends Dura
             if (inbound?._delivery_state !== "processed" || !stored || stored._delivery_state !== "processed") return fail("E_ADK_LOOP_UNCERTAIN");
             let receipt: Receipt;
             try { receipt = snapshot(JSON.parse(stored._text), 65536) as Receipt; } catch { return fail("E_ADK_LOOP_STORAGE"); }
-            if (receipt._format !== "adk-tool-loop/1" || receipt._binding !== binding) return fail("E_ADK_LOOP_CONFLICT");
-            await reads.project(ref.read); check();
-            for (const read of receipt._reads) { await readHost.reauthorize(read, ref.read); check(); }
+            if (!["adk-tool-loop/1", "adk-tool-loop/2"].includes(receipt._format) || receipt._binding !== binding) return fail("E_ADK_LOOP_CONFLICT");
+            if (!Array.isArray(receipt._reads) || !Array.isArray(receipt._actions) ||
+                receipt._reads.length + receipt._actions.length > limits._max_calls) return fail("E_ADK_LOOP_UNCERTAIN");
+            // V1 cannot prove Action classification, even if a colliding Read was
+            // later removed. Never prepare or disclose such historical receipts.
+            if (receipt._format === "adk-tool-loop/1" && receipt._actions.length) return fail("E_ADK_LOOP_UNCERTAIN");
+            const stamps = receipt._format === "adk-tool-loop/2" ? receipt._catalog : [];
+            if (!Array.isArray(stamps) || stamps.length > 32 || stamps.some(e => !e || typeof e !== "object" ||
+                Object.keys(e).sort().join() !== "_kind,_name" || typeof e._name !== "string" || !["read", "action"].includes(e._kind)) ||
+                new Set(stamps.map(e => e._name)).size !== stamps.length) return fail("E_ADK_LOOP_UNCERTAIN");
+            if (!["completed", "requires_confirmation"].includes(receipt._result?._status) ||
+                (receipt._result._status === "requires_confirmation") !== (receipt._actions.length > 0)) return fail("E_ADK_LOOP_UNCERTAIN");
+            const catalog = await projectCatalog(stamps);
+            const retainedEntry = (call: { _name: string }, kind: DispatchEntry["_kind"]): DispatchEntry => {
+              const entry = catalog.find(e => e._tool._name === call?._name);
+              if (receipt._format === "adk-tool-loop/2" && !stamps.some(e => e._name === call?._name && e._kind === kind)) return fail("E_ADK_LOOP_UNCERTAIN");
+              if (!entry && kind === "read" && readHost._tool_ids.includes(call?._name)) return fail("E_ADK_LOOP_DENIED");
+              if (!entry || entry._kind !== kind) return fail("E_ADK_LOOP_UNCERTAIN");
+              return entry;
+            };
+            // Validate all retained kinds before any invocation authorization or preparer.
+            const retainedReads = receipt._reads.map(call => ({ call, entry: retainedEntry(call, "read") }));
+            const retainedActions = receipt._actions.map(call => ({ call, entry: retainedEntry(call, "action") }));
+            for (const { call } of retainedReads) { await readHost.reauthorize(call, ref.read); check(); }
             // Prepare replay reauthorizes and returns proposals only, never retained outcomes.
             const proposals: ActionProposal[] = [];
-            for (const a of receipt._actions) { check(); proposals.push(await actions.prepare({ _capability_id: a._name, _arguments: a._arguments } as never, actions.bindContext({ ...ctx, _delivery_id: a._delivery_id }))); }
+            for (const { call: a, entry } of retainedActions) { check(); proposals.push(await actions.prepare({ _capability_id: entry._tool._name, _arguments: a._arguments } as never, actions.bindContext({ ...ctx, _delivery_id: a._delivery_id }))); }
             check(); return frozen(receipt._result._status === "requires_confirmation" ? { ...receipt._result, _proposals: proposals } : receipt._result);
           }
           turn = prepared._turn;
-          const projected = await reads.project(ref.read); check();
-          const tools: XAIToolDefinition[] = [...projected];
-          for (const d of definitions) if (await authorize("expose-action", d._id)) tools.push({ _name: d._id, _description: `Prepare only; application confirmation required. ${d._description}`, _input_schema: d._input_schema });
-          if (tools.length > 32 || new Set(tools.map(t => t._name)).size !== tools.length) return fail("E_ADK_LOOP_CONFIG");
+          const catalog = await projectCatalog();
+          const tools = Object.freeze(catalog.map(entry => entry._tool));
           const messages: XAIMessage[] = [{ _role: "user", _content: [{ _type: "text", _text: text }] }];
           const trace: ToolLoopTrace[] = [], pending: PendingAction[] = [], readCalls: Receipt["_reads"] = [];
           const seen = new Map<string, string>();
@@ -223,27 +264,27 @@ export function createRouterToolLoop<const R extends Reads, const H extends Dura
             const batch: PreparedCall[] = [], batchIds = new Set<string>();
             for (const raw of r._tool_calls) {
               const c = obj(raw, ["_id", "_name", "_arguments", "_continuation_ref"]);
-              const id = string(c._id, 128), name = string(c._name, 100), t = tools.find(t => t._name === name);
-              if (!t || batchIds.has(id)) return fail("E_ADK_LOOP_RESULT"); batchIds.add(id);
-              const args = snapshot(c._arguments, 4096); argumentsFor(args, t._input_schema as ToolInputSchema);
+              const id = string(c._id, 128), name = string(c._name, 100), entry = catalog.find(e => e._tool._name === name);
+              if (!entry || batchIds.has(id)) return fail("E_ADK_LOOP_RESULT"); batchIds.add(id);
+              const args = snapshot(c._arguments, 4096); argumentsFor(args, entry._tool._input_schema as ToolInputSchema);
               const binding = hash(JSON.stringify([name, args]));
               if (seen.has(id) && seen.get(id) !== binding) return fail("E_ADK_LOOP_CONFLICT");
               seen.set(id, binding);
               batch.push({ call: { _id: id, _name: name, _arguments: args,
-                ...(c._continuation_ref === undefined ? {} : { _continuation_ref: string(c._continuation_ref, 512) }) }, action: definitions.some(d => d._id === name) });
+                ...(c._continuation_ref === undefined ? {} : { _continuation_ref: string(c._continuation_ref, 512) }) }, entry });
             }
             messages.push({ _role: "assistant", _content: r._text ? [{ _type: "text", _text: r._text }] : [], _tool_calls: batch.map(x => x.call) });
             const proposals: ActionProposal[] = [];
-            for (const { call, action } of batch) {
+            for (const { call, entry } of batch) {
               check(); const localId = hash(JSON.stringify([ref.key, call._id]));
-              if (action) {
-                const a = { _name: call._name, _arguments: call._arguments as Record<string, string>, _delivery_id: localId };
+              if (entry._kind === "action") {
+                const a = { _name: entry._tool._name, _arguments: call._arguments as Record<string, string>, _delivery_id: localId };
                 const proposal = await actions.prepare({ _capability_id: a._name, _arguments: a._arguments } as never, actions.bindContext({ ...ctx, _delivery_id: localId }));
                 check(); pending.push(a); proposals.push(proposal);
                 trace.push({ _round: round, _event: "proposal", _operation_hash: operation, _tool_id: call._name, _call_hash: hash(call._id) });
               } else {
                 let output: unknown;
-                try { output = await reads.invoke({ _id: localId, _name: call._name, _arguments: call._arguments } as never, ref.read); }
+                try { output = await reads.invoke({ _id: localId, _name: entry._tool._name, _arguments: call._arguments } as never, ref.read); }
                 catch (e) { check(); const error = safe(e); if (error._code === "E_ADK_LOOP_DENIED") throw error; return fail("E_ADK_LOOP_TOOL"); }
                 check(); readCalls.push({ _id: localId, _name: call._name, _arguments: call._arguments });
                 const content = JSON.stringify(snapshot(output, 8192));
@@ -254,7 +295,7 @@ export function createRouterToolLoop<const R extends Reads, const H extends Dura
             if (proposals.length) { result = frozen({ _status: "requires_confirmation", _proposals: proposals, _trace: trace }); break; }
           }
           if (!result) return fail("E_ADK_LOOP_LIMIT");
-          check(); const receipt = snapshot({ _format: "adk-tool-loop/1", _binding: binding, _result: result, _actions: pending, _reads: readCalls }, 65536);
+          check(); const receipt = snapshot({ _format: "adk-tool-loop/2", _catalog: catalog.map(e => ({ _name: e._tool._name, _kind: e._kind })), _binding: binding, _result: result, _actions: pending, _reads: readCalls }, 65536);
           await repo.addMessage({ _id: deterministicId("adk-tool-loop-result", receiptKey), _conversation_id: turn._conversation_id,
             _direction: "outbound", _text: JSON.stringify(receipt), _occurred_at: new Date(), _dedupe_key: receiptKey,
             _origin_inbound_message_id: turn._inbound_message_id, _channel_id: CHANNEL, _delivery_state: "processed" });

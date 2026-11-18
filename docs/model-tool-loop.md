@@ -74,7 +74,10 @@ The loop policy phases are `run`, `replay` and `expose-action`. Both initial and
 repeated deliveries require `run`; replay additionally requires `replay`.
 Read discovery/invocation/replay require current T1 policy. T2 independently
 authorizes Action prepare and all later controls. No policy means denial.
-The Action list is explicit; discovery is not an execution grant.
+The Action list is explicit; discovery is not an execution grant. Selected Action
+IDs must be disjoint from **all registered Read IDs**, including policy-hidden
+entries; a collision fails configuration before startup or callbacks. Unselected
+Actions do not shadow Reads.
 
 This slice starts each turn with one user message and the configured system
 instruction. It retains only the bounded in-turn native transcript in memory.
@@ -117,7 +120,9 @@ Provider-side hidden inputs or ignored output limits cannot be enforced here.
 
 Input/output use the existing bounded immutable JSON validator (rejecting
 accessors, proxies, cycles and executable values). Tool schemas remain T1's
-closed-object/bounded-string subset. A whole response batch is validated before
+closed-object/bounded-string subset. One deeply frozen, typed catalog records the Read/Action kind of each authorized
+exposure. Validation and dispatch carry that entry; the wider Action registry
+never reclassifies a model call. A whole response batch is validated before
 callbacks: unknown tools, extra arguments, wrong types, duplicate batch IDs or
 changed arguments for a reused call ID stop execution. No partial invalid batch
 is executed. Read results are bounded by T1 and again before model continuation.
@@ -146,6 +151,20 @@ precedes marking inbound processed. These are separate SQLite operations:
 crash between them yields **uncertain**, never implicit redispatch. Any incomplete,
 failed, timed-out or cancelled reserved turn fails closed on redelivery, including
 after restart. The same delivery with changed request/configuration conflicts.
+New `adk-tool-loop/2` receipts retain the validated exposure catalog's name/kind
+provenance. Replay validates every retained call kind against one typed catalog
+before any invocation authorization or Action preparer. Historical Action
+exposure comes from that receipt; current loop replay and T2 prepare authority
+remain required. Read exposure/invoke authority is checked currently. A malformed,
+missing or contradictory catalog fails UNCERTAIN without preparation/disclosure.
+
+Pre-fix `adk-tool-loop/1` receipts containing Actions cannot prove whether a Read
+was misclassified, even if the colliding Read has since been removed. They fail
+UNCERTAIN before disclosure, handlers, Action preparation or redispatch. Read-only
+v1 receipts can replay with current Read authority. No receipt is automatically
+rewritten, migrated, reinterpreted or executed; profile/schema markers stay the
+same. Existing T2 application controls remain separate.
+
 Completed turns return their stored result without another model request/read
 handler. Before disclosure, replay checks current loop `run/replay`, T1
 expose/invoke authorization for retained reads, and T2 prepare authorization for

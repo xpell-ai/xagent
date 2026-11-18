@@ -55,3 +55,10 @@ Validation: package builds and available tests are recorded in the coordinated G
   policy/replay checks, T2 prepare-only proposals and conservative SQLite turn claims.
 - Preserve existing factories/interfaces and protected assets; add offline
   fixture sample, typed consumer and crash/restart/cancellation regressions.
+
+### Unreleased — bounded tool-loop collision correction
+
+- Reject selected Read/Action ID collisions even when hidden, and dispatch from
+  an immutable typed exposure catalog.
+- Validate catalog provenance on replay; ambiguous pre-fix Action-bearing
+  receipts fail closed without preparation, disclosure, redispatch or migration.
