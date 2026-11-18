@@ -21,7 +21,9 @@
     "examples/read-tools.mjs",
     "adk-action-system-xapps",
     "docs/durable-actions.md",
-    "examples/durable-actions.mjs"
+    "examples/durable-actions.mjs",
+    "docs/model-tool-loop.md",
+    "examples/model-tool-loop.mjs"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -44,6 +46,10 @@
     "./adk/actions": {
       "types": "./dist/adk/actions.d.ts",
       "import": "./dist/adk/actions.js"
+    },
+    "./adk/tool-loop": {
+      "types": "./dist/adk/tool-loop.d.ts",
+      "import": "./dist/adk/tool-loop.js"
     }
   },
   "sideEffects": false,

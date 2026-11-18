@@ -61,12 +61,13 @@ function safeFailure(error: unknown): AgentAdkError {
   return fail(typeof code === "string" && ROUTER_CODES.has(code) ? code : "E_ADK_ROUTER_TRANSPORT");
 }
 
-class RouterModel implements ConversationModel {
+/** Internal shared XAI/AimeProvider connection; no additional host or transport. */
+export class RouterModel implements ConversationModel {
   readonly #id = `adk-router-${randomUUID()}`;
   #provider?: AimeProvider;
   #closed = false;
   #registered = false;
-  constructor(readonly config: RouterTextModel, readonly options: RouterAgentOptions) {}
+  constructor(readonly config: RouterTextModel, readonly options: Pick<RouterAgentOptions, "_name"> & { _conversations: Pick<RouterAgentOptions["_conversations"], "_instance_id" | "_application_scope"> }) {}
 
   async prepare(): Promise<void> {
     if (this.#closed) throw fail("E_ADK_CLOSED");
@@ -101,12 +102,22 @@ class RouterModel implements ConversationModel {
     const key = createHash("sha256").update(JSON.stringify(["adk-router-chat/1",
       this.options._conversations._instance_id, input._idempotency_key])).digest("hex");
     const c = input._context;
-    const response = await _x.execute({ _module: "xai", _op: "generate", _params: {
-      _provider: this.#id, _model: this.config._model, _messages: c._messages,
+    const r = await this.round({ _messages: c._messages,
       _task: c._task, system: c._system, context: c._context, max_tokens: c._reserved_output_tokens,
       _app_id: scope._app_id, _env: scope._env, _caller_module: this.options._name,
       _caller_op: "receive-message", _purpose: "agent-chat", _idempotency_key: key,
       response_format: { type: "text" },
+    });
+    if (r._tool_calls?.length || typeof r._text !== "string" || !r._text.trim() || hasPlanningEnvelope(r._text) || r._finish_reason !== "stop") {
+      throw fail("E_ADK_ROUTER_RESULT");
+    }
+    return r._text;
+  }
+
+  async round(params: Record<string, unknown>): Promise<Record<string, any>> {
+    if (this.#closed || !this.#registered) throw fail("E_ADK_CLOSED");
+    const response = await _x.execute({ _module: "xai", _op: "generate", _params: {
+      ...params, _provider: this.#id, _model: this.config._model,
     } });
     const r = response?._result ?? response;
     if (response?._ok !== true || r?._ok !== true) {
@@ -114,10 +125,7 @@ class RouterModel implements ConversationModel {
       if (code === "E_ADK_ROUTER_TIMEOUT" || code === "E_ADK_ROUTER_TRANSPORT" || ROUTER_CODES.has(code)) throw fail(code);
       throw fail("E_ADK_ROUTER_GENERATE");
     }
-    if (r._tool_calls?.length || typeof r._text !== "string" || !r._text.trim() || hasPlanningEnvelope(r._text) || r._finish_reason !== "stop") {
-      throw fail("E_ADK_ROUTER_RESULT");
-    }
-    return r._text;
+    return r;
   }
 
   async close(): Promise<void> {
