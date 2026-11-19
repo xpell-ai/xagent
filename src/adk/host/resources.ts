@@ -13,7 +13,9 @@ export type HostSystemAppSource = Readonly<{
 export type HostResourceState = "unprepared" | "preparing" | "ready" | "closed";
 export type AgentHostErrorCode = "E_ADK_HOST_CONFIG" | "E_ADK_HOST_RESOURCE" |
   "E_ADK_HOST_RESOURCE_CONFLICT" | "E_ADK_HOST_START" | "E_ADK_HOST_CLEANUP" |
-  "E_ADK_HOST_IN_USE" | "E_ADK_CLOSED" | "E_ADK_NOT_READY" | "E_ADK_CONFIG";
+  "E_ADK_HOST_IN_USE" | "E_ADK_CLOSED" | "E_ADK_NOT_READY" | "E_ADK_CONFIG" |
+  "E_ADK_HOST_TURN_DENIED" | "E_ADK_HOST_TURN_BUSY" | "E_ADK_HOST_TURN_CANCELLED" |
+  "E_ADK_HOST_TURN_TIMEOUT" | "E_ADK_HOST_TURN_LIMIT" | "E_ADK_HOST_TURN_FAILED";
 export class AgentHostError extends Error {
   constructor(readonly _code: AgentHostErrorCode) {
     super("Experimental Agent Host failed; inspect the safe error code");

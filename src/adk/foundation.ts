@@ -60,6 +60,15 @@ export type FoundationResources = {
   close(): Promise<void>;
 };
 
+/** Private experimental Host-only seam; never combined with a durable adapter. */
+export type FoundationTurns = {
+  readonly _lifecycle: XAgentMessageLifecycle;
+  turn(input: unknown, invoke: (message: XChannelInboundMessage) => Promise<string>): Promise<string>;
+  beforeModel(context: XAgentMessageContext, message: XAgentInboundMessage): Promise<string>;
+  beforeReply(message: XChannelOutboundMessage): void;
+  close(): Promise<void>;
+};
+
 export class AgentAdkError extends Error {
   constructor(readonly _code: string, message: string) {
     super(message);
@@ -101,7 +110,7 @@ class FoundationChannel implements XChannel {
   #sequence = 0;
   #replies = new Map<string, string | undefined>();
 
-  constructor(readonly _id: string, private readonly adapter?: FoundationAdapter) {}
+  constructor(readonly _id: string, private readonly adapter?: FoundationAdapter, private readonly turns?: FoundationTurns) {}
 
   start(runtime: XChannelRuntime): void {
     this.#runtime = runtime;
@@ -124,6 +133,7 @@ class FoundationChannel implements XChannel {
     if (!this.#ready || !id || !this.#replies.has(key)) {
       throw new AgentAdkError("E_ADK_MOCK_REPLY", "No active mock turn for reply");
     }
+    this.turns?.beforeReply(message);
     this.#replies.set(key, message._text);
     return { _accepted: true, _external_message_id: `mock-out-${id}`,
       _accepted_at: Date.now() };
@@ -157,12 +167,13 @@ class FoundationChannel implements XChannel {
 
 class FoundationAgent extends XAgent {
   constructor(name: string, channel: FoundationChannel, private readonly model: MockTextModel,
-    private readonly adapter?: FoundationAdapter) {
-    super({ _name: name, _channels: [channel], ...(adapter ? { _message_lifecycle: adapter._lifecycle } : {}) });
+    private readonly adapter?: FoundationAdapter, private readonly turns?: FoundationTurns) {
+    super({ _name: name, _channels: [channel],
+      ...(adapter || turns ? { _message_lifecycle: (adapter ?? turns)!._lifecycle } : {}) });
   }
 
   protected override async onMessage(message: XAgentInboundMessage, context: XAgentMessageContext): Promise<XChannelOutboundMessage> {
-    const generated = await this.adapter?.beforeModel(context, message);
+    const generated = this.turns ? await this.turns.beforeModel(context, message) : await this.adapter?.beforeModel(context, message);
     // Default mode stays a local fixed mock; explicit composition may supply text.
     return { _external_conversation_id: message._external_conversation_id,
       _text: generated ?? this.model._text, _reply_to_external_message_id: message._external_message_id };
@@ -178,8 +189,8 @@ export function createAgent(options: AgentFoundationOptions): AgentFoundation {
   return composeFoundation(options);
 }
 
-export function composeFoundation(options: AgentFoundationOptions, adapter?: FoundationAdapter, resources?: FoundationResources): AgentFoundation {
-  if (adapter && resources) throw new AgentAdkError("E_ADK_CONFIG", "Resource and durable profiles cannot be combined");
+export function composeFoundation(options: AgentFoundationOptions, adapter?: FoundationAdapter, resources?: FoundationResources, turnPort?: FoundationTurns): AgentFoundation {
+  if (adapter && (resources || turnPort)) throw new AgentAdkError("E_ADK_CONFIG", "Resource/turn and durable profiles cannot be combined");
   const config = record(options, ["_name", "_model", "_channel", "_host", "_plugins"]);
   const model = record(config._model, ["_type", "_text"]);
   const channelConfig = record(config._channel, ["_type", "_id"]);
@@ -197,8 +208,8 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
   }
   const address = listen._host as "127.0.0.1" | "::1";
   const port = listen._port as number;
-  const channel = new FoundationChannel(text(channelConfig._id), adapter);
-  const agent = new FoundationAgent(text(config._name), channel, mockTextModel({ _text: text(model._text) }), adapter);
+  const channel = new FoundationChannel(text(channelConfig._id), adapter, turnPort);
+  const agent = new FoundationAgent(text(config._name), channel, mockTextModel({ _text: text(model._text) }), adapter, turnPort);
   const lease = Symbol("adk-host");
   let state: AgentFoundationStatus["_state"] = "created";
   let node: XNode | undefined;
@@ -277,11 +288,13 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
     if (closing) return closing;
     const wasStarting = state === "starting";
     state = "closing"; // Fence new fixture ingress immediately.
+    const turnDrain = turnPort?.close();
     const stopped = wasStarting ? node?.stop() : undefined;
     closing = (async () => {
       try {
         await Promise.allSettled([starting, stopped]);
         await Promise.allSettled([...turns]);
+        await turnDrain;
         await closeResources();
       } finally { state = "closed"; }
     })();
@@ -292,7 +305,9 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
     if (state !== "ready") {
       throw new AgentAdkError("E_ADK_NOT_READY", "Foundation is not ready");
     }
-    const turn = adapter
+    const turn = turnPort
+      ? turnPort.turn(input, (message) => channel.turn(message._text, message))
+      : adapter
       ? adapter.turn(input, (message) => channel.turn(message._text, message))
       : channel.turn(text(record(input, ["_text"])._text));
     turns.add(turn);

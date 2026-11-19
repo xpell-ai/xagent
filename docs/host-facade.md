@@ -1,5 +1,10 @@
 # Experimental Host Facade
 
+Gate D.1 adds an optional experimental trusted text turn delegate; see
+[the bounded contract and neutral offline runbook](host-turn-delegate.md).
+With that option omitted, the P2.2 behavior below is unchanged. The option does
+not activate T1 tools, Router, durable profiles or plugins implicitly.
+
 `@xpell/agent/adk/host` is an opt-in, **experimental, unpublished** Foundation
 composition. It delegates to the existing Foundation and one XNode. It proves
 native XVM loading of zero or one neutral, read-only system app; it is not a
