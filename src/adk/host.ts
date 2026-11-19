@@ -3,11 +3,15 @@ import { AgentAdkError, composeFoundation, type AgentFoundation, type AgentFound
 import { absolute, AgentHostError, data, descriptor, fail, list, resourcePort,
   type HostSystemAppSource, type HostResourceState, type AgentHostErrorCode } from "./host/resources.js";
 export { AgentHostError, type AgentHostErrorCode, type HostSystemAppSource } from "./host/resources.js";
+import { turnController, type HostTurnDelegate } from "./host/turns.js";
+export type { HostTurnDelegate, HostTurnRequest } from "./host/turns.js";
 
 /** @experimental P2.2 only. Profile nesting and integrity descriptors may change before publication. */
 export type AgentHostOptions = Readonly<{
   _profile: Readonly<{ _type: "foundation"; _options: AgentFoundationOptions }>;
   _system_apps?: readonly HostSystemAppSource[];
+  /** @experimental D.1 trusted synthetic-local text strategy; not an identity or tool grant. */
+  _turn?: HostTurnDelegate;
 }>;
 /** @experimental Safe state only; no raw host/store or independently closable inner Agent. */
 export type AgentHostStatus = Readonly<{
@@ -15,7 +19,11 @@ export type AgentHostStatus = Readonly<{
   _agent: AgentFoundationStatus; _resources: HostResourceState; _error_code?: AgentHostErrorCode;
 }>;
 /** @experimental P2.2 only; no permanent public contract is implied. */
-export type AgentHost = Readonly<Pick<AgentFoundation, "start" | "close" | "testTurn"> & { getStatus(): AgentHostStatus }>;
+export type AgentHost = Readonly<Pick<AgentFoundation, "start" | "close"> & {
+  /** Optional cancellation applies only to the explicitly delegated profile. */
+  testTurn(input: Readonly<{ _text: string }>, signal?: AbortSignal): Promise<string>;
+  getStatus(): AgentHostStatus;
+}>;
 
 function foundation(value: unknown): AgentFoundationOptions {
   const o = data(value, ["_name", "_model", "_channel", "_host", "_plugins"]);
@@ -36,12 +44,13 @@ function safe(error: unknown, fallback: AgentHostErrorCode): AgentHostError {
 }
 /** @experimental Opt-in fresh mock host and zero/one view-only native XVM resource. */
 export function createAgentHost(options: AgentHostOptions): AgentHost {
-  const o = data(options, ["_profile", "_system_apps"]), profile = data(o._profile, ["_type", "_options"]);
+  const o = data(options, ["_profile", "_system_apps", "_turn"]), profile = data(o._profile, ["_type", "_options"]);
   if (profile._type !== "foundation") return fail("E_ADK_HOST_CONFIG");
   const config = foundation(profile._options), sources = list(o._system_apps ?? [], 1).map(descriptor);
   const resources = resourcePort(config._host._work_folder, sources[0]);
+  const turns = o._turn === undefined ? undefined : turnController(o._turn);
   let base: AgentFoundation;
-  try { base = composeFoundation(config, undefined, resources); } catch (e) { throw safe(e, "E_ADK_HOST_CONFIG"); }
+  try { base = composeFoundation(config, undefined, resources, turns?.port); } catch (e) { throw safe(e, "E_ADK_HOST_CONFIG"); }
   let startup: Promise<void> | undefined, closing: Promise<void> | undefined, error: AgentHostError | undefined;
   return Object.freeze({
     start() {
@@ -49,9 +58,13 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       return startup ??= base.start().catch(e => { error = safe(e, "E_ADK_HOST_START"); throw error; });
     },
     close() { return closing ??= base.close().catch(e => { error = safe(e, "E_ADK_HOST_CLEANUP"); throw error; }); },
-    async testTurn(input) {
+    async testTurn(input, signal) {
       const v = data(input, ["_text"]);
-      try { return await base.testTurn({ _text: v._text as string }); } catch (e) { throw safe(e, "E_ADK_CONFIG"); }
+      try {
+        if (!turns) { if (signal !== undefined) return fail("E_ADK_HOST_CONFIG"); return await base.testTurn({ _text: v._text as string }); }
+        if (base.getStatus()._state !== "ready") return fail("E_ADK_NOT_READY");
+        return await turns.run(v._text, signal, () => base.testTurn({ _text: v._text as string }));
+      } catch (e) { throw safe(e, "E_ADK_CONFIG"); }
     },
     getStatus() {
       const agent = base.getStatus();

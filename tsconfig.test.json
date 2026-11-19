@@ -20,6 +20,8 @@
     "tests/tools-consumer.ts",
     "tests/actions-consumer.ts",
     "tests/tool-loop-consumer.ts",
-    "tests/plugins-consumer.ts"
+    "tests/plugins-consumer.ts",
+    "tests/host-consumer.ts",
+    "tests/host-turn-consumer.ts"
   ]
 }

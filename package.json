@@ -27,7 +27,9 @@
     "docs/agent-plugins.md",
     "examples/agent-plugins.mjs",
     "docs/host-facade.md",
-    "examples/host-agent.mjs"
+    "examples/host-agent.mjs",
+    "examples/host-turn-agent.mjs",
+    "docs/host-turn-delegate.md"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
