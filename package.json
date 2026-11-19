@@ -25,7 +25,9 @@
     "docs/model-tool-loop.md",
     "examples/model-tool-loop.mjs",
     "docs/agent-plugins.md",
-    "examples/agent-plugins.mjs"
+    "examples/agent-plugins.mjs",
+    "docs/host-facade.md",
+    "examples/host-agent.mjs"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -56,6 +58,10 @@
     "./adk/plugins": {
       "types": "./dist/adk/plugins.d.ts",
       "import": "./dist/adk/plugins.js"
+    },
+    "./adk/host": {
+      "types": "./dist/adk/host.d.ts",
+      "import": "./dist/adk/host.js"
     }
   },
   "sideEffects": false,

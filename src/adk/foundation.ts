@@ -51,6 +51,15 @@ export type FoundationAdapter = {
   close(ownsGraph: boolean): Promise<void>;
 };
 
+/** Private P2.2 resource seam. Never combined with a durable profile adapter. */
+export type FoundationResources = {
+  readonly _system_xapps_path?: string;
+  preflight(): Promise<void>;
+  materialize(): Promise<void>;
+  afterStart(): Promise<void>;
+  close(): Promise<void>;
+};
+
 export class AgentAdkError extends Error {
   constructor(readonly _code: string, message: string) {
     super(message);
@@ -169,7 +178,8 @@ export function createAgent(options: AgentFoundationOptions): AgentFoundation {
   return composeFoundation(options);
 }
 
-export function composeFoundation(options: AgentFoundationOptions, adapter?: FoundationAdapter): AgentFoundation {
+export function composeFoundation(options: AgentFoundationOptions, adapter?: FoundationAdapter, resources?: FoundationResources): AgentFoundation {
+  if (adapter && resources) throw new AgentAdkError("E_ADK_CONFIG", "Resource and durable profiles cannot be combined");
   const config = record(options, ["_name", "_model", "_channel", "_host", "_plugins"]);
   const model = record(config._model, ["_type", "_text"]);
   const channelConfig = record(config._channel, ["_type", "_id"]);
@@ -209,7 +219,10 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
               await adapter.close(ownsGraph);
             }
           }
-          finally { await node?.stop(); }
+          finally {
+            try { await node?.stop(); }
+            finally { if (resources) await resources.close(); }
+          }
         }
       } finally {
         if (activeHost === lease) activeHost = undefined;
@@ -233,17 +246,21 @@ export function composeFoundation(options: AgentFoundationOptions, adapter?: Fou
           throw new AgentAdkError("E_ADK_HOST_IN_USE", "Foundation requires one host per fresh process");
         }
         activeHost = lease;
+        if (resources) { await resources.preflight(); assertStarting(); }
         // Exclusive creation refuses existing stores, settings and symlinks.
         if (adapter) await adapter.prepareFolder(folder);
         else await mkdir(folder);
         assertStarting();
+        if (resources) { await resources.materialize(); assertStarting(); }
         node = new XNode();
         await node.start({ _work_folder: folder, _host: address, _port: port,
           _web_settings: { "enable-wormhole": false, "enable-ssl": false },
-          _modules: [agent], ...(adapter ? { _system_xapps_path: adapter._system_xapps_path,
+          _modules: [agent], ...(resources?._system_xapps_path ? { _system_xapps_path: resources._system_xapps_path } : {}),
+          ...(adapter ? { _system_xapps_path: adapter._system_xapps_path,
             ...(adapter._entity_sqlite ? { _entity_sqlite: adapter._entity_sqlite } : {}) } : {}) });
         assertStarting();
         await adapter?.afterStart();
+        if (resources) await resources.afterStart();
         assertStarting();
         state = "ready";
       } catch (error) {
